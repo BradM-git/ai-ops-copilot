@@ -1,7 +1,7 @@
 // src/app/page.tsx
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import CloseAlertButton from "./components/CloseAlertButton";
+import CloseAlertButton from "../components/CloseAlertButton";
 
 export const dynamic = "force-dynamic";
 
