@@ -1,5 +1,7 @@
+// src/app/page.tsx
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import CloseAlertButton from "@/app/components/CloseAlertButton";
 
 export const dynamic = "force-dynamic";
 
@@ -16,9 +18,7 @@ type AlertRow = {
 export default async function Home() {
   const { data: alerts, error } = await supabase
     .from("alerts")
-    .select(
-      "id,type,message,amount_at_risk,status,created_at,customers(name,email)"
-    )
+    .select("id,type,message,amount_at_risk,status,created_at,customers(name,email)")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -36,22 +36,26 @@ export default async function Home() {
             Automated revenue risk alerts from Stripe → Supabase (MVP)
           </p>
         </div>
-        <div className="text-right text-sm text-slate-600">
-          <div>{open.length} open</div>
-          <div>{rows.length} total</div>
+
+        <div className="flex flex-col items-end gap-2">
+          <div className="text-right text-sm text-slate-600">
+            <div>{open.length} open</div>
+            <div>{rows.length} total</div>
+          </div>
+
+          <div className="flex items-center gap-3 text-sm">
+            <Link className="text-blue-600 hover:underline" href="/customers">
+              Customers
+            </Link>
+            <Link className="text-blue-600 hover:underline" href="/api/cron/daily">
+              Run sync now
+            </Link>
+          </div>
         </div>
       </header>
 
       <section className="mt-6 rounded-xl border bg-white p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Open alerts</h2>
-          <Link
-            className="text-sm text-blue-600 hover:underline"
-            href="/api/cron/daily"
-          >
-            Run sync now
-          </Link>
-        </div>
+        <h2 className="font-semibold">Open alerts</h2>
 
         {error ? (
           <pre className="mt-3 overflow-auto rounded-lg bg-slate-50 p-3 text-xs">
@@ -70,8 +74,10 @@ export default async function Home() {
                       {a.customers?.email ?? ""}
                     </span>
                   </div>
-                  <div className="text-sm text-slate-600">
-                    {new Date(a.created_at).toLocaleString()}
+
+                  <div className="flex items-center gap-3 text-sm text-slate-600">
+                    <span>{new Date(a.created_at).toLocaleString()}</span>
+                    <CloseAlertButton id={a.id} />
                   </div>
                 </div>
 
