@@ -1,37 +1,36 @@
 // src/app/api/alerts/close/route.ts
+import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { HttpError, jsonErr, jsonOk, requireEnv } from "@/lib/api";
 
-export const runtime = "nodejs";
-
-function getSupabase() {
-  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  return createClient(url, key);
+function supabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(url, serviceKey, { auth: { persistSession: false } });
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const id = body?.id;
+    const body = await req.json();
+    const alertId = body?.alertId;
 
-    if (!id || typeof id !== "string") {
-      throw new HttpError(400, "Missing id", { code: "MISSING_ID" });
+    if (!alertId || typeof alertId !== "string") {
+      return NextResponse.json({ error: "Missing alertId" }, { status: 400 });
     }
 
-    const supabase = getSupabase();
+    const admin = supabaseAdmin();
 
-    const { error } = await supabase.from("alerts").update({ status: "closed" }).eq("id", id);
+    const { data, error } = await admin
+      .from("alerts")
+      .update({ status: "closed" })
+      .eq("id", alertId)
+      .select("id, status")
+      .maybeSingle();
 
-    if (error) {
-      throw new HttpError(500, "Supabase update alert failed", {
-        code: "SUPABASE_UPDATE_ALERT_FAILED",
-        details: error,
-      });
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ error: "Alert not found" }, { status: 404 });
 
-    return jsonOk({ ok: true });
-  } catch (err) {
-    return jsonErr(err);
+    return NextResponse.json({ ok: true, alert: data });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "Unknown error" }, { status: 500 });
   }
 }
