@@ -1,4 +1,3 @@
-// src/app/api/stripe/invoices/route.ts
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { HttpError, jsonErr, jsonOk, requireEnv } from "@/lib/api";
@@ -13,7 +12,8 @@ function getSupabase() {
 
 function getStripe() {
   const key = requireEnv("STRIPE_SECRET_KEY");
-  return new Stripe(key, { apiVersion: "2024-06-20" });
+  // Do not hardcode apiVersion; keeps typings + Stripe account settings aligned
+  return new Stripe(key);
 }
 
 async function listAllInvoices(stripe: Stripe, maxPages = 25) {
