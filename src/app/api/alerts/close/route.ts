@@ -1,23 +1,37 @@
+// src/app/api/alerts/close/route.ts
 import { createClient } from "@supabase/supabase-js";
+import { HttpError, jsonErr, jsonOk, requireEnv } from "@/lib/api";
 
 export const runtime = "nodejs";
 
+function getSupabase() {
+  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return createClient(url, key);
+}
+
 export async function POST(req: Request) {
-  const { id } = await req.json().catch(() => ({}));
+  try {
+    const body = await req.json().catch(() => ({}));
+    const id = body?.id;
 
-  if (!id) return Response.json({ error: "Missing id" }, { status: 400 });
+    if (!id || typeof id !== "string") {
+      throw new HttpError(400, "Missing id", { code: "MISSING_ID" });
+    }
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+    const supabase = getSupabase();
 
-  const { error } = await supabase
-    .from("alerts")
-    .update({ status: "closed" })
-    .eq("id", id);
+    const { error } = await supabase.from("alerts").update({ status: "closed" }).eq("id", id);
 
-  if (error) return Response.json({ error }, { status: 500 });
+    if (error) {
+      throw new HttpError(500, "Supabase update alert failed", {
+        code: "SUPABASE_UPDATE_ALERT_FAILED",
+        details: error,
+      });
+    }
 
-  return Response.json({ ok: true });
+    return jsonOk({ ok: true });
+  } catch (err) {
+    return jsonErr(err);
+  }
 }

@@ -3,22 +3,27 @@ import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+type ExpectedRevenueRow = {
+  expected_amount: number | null;
+  cadence_days: number | null;
+  last_paid_at: string | null;
+};
+
 type CustomerRow = {
   id: string;
   name: string | null;
   email: string | null;
   stripe_customer_id: string | null;
-  expected_revenue?: {
-    expected_amount: number | null;
-    cadence_days: number | null;
-    last_paid_at: string | null;
-  } | null;
+  // Supabase nested selects return arrays for related tables
+  expected_revenue?: ExpectedRevenueRow[] | null;
 };
 
 export default async function CustomersPage() {
   const { data, error } = await supabase
     .from("customers")
-    .select("id,name,email,stripe_customer_id,expected_revenue(expected_amount,cadence_days,last_paid_at)")
+    .select(
+      "id,name,email,stripe_customer_id,expected_revenue(expected_amount,cadence_days,last_paid_at)"
+    )
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -55,7 +60,8 @@ export default async function CustomersPage() {
             </thead>
             <tbody>
               {rows.map((c) => {
-                const e = c.expected_revenue;
+                const e = c.expected_revenue?.[0] ?? null;
+
                 return (
                   <tr key={c.id} className="border-t">
                     <td className="p-3">
