@@ -19,9 +19,14 @@ export async function POST(req: Request) {
 
     const admin = supabaseAdmin();
 
+    // Keep this minimal: "closed" remains the escape hatch.
+    // We do NOT add schema / meaning beyond status here.
     const { data, error } = await admin
       .from("alerts")
-      .update({ status: "closed" })
+      .update({
+        status: "closed",
+        // optional: leave context as-is; do not mutate
+      })
       .eq("id", alertId)
       .select("id, status")
       .maybeSingle();

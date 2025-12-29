@@ -14,7 +14,11 @@ function cronAuthorized(req: Request) {
   return header === secret || bearer === secret;
 }
 
-async function hit(path: string, headers?: Record<string, string>) {
+async function hit(
+  path: string,
+  headers?: Record<string, string>,
+  method: "GET" | "POST" = "GET"
+) {
   const base = requireEnv("APP_BASE_URL");
 
   const controller = new AbortController();
@@ -22,6 +26,7 @@ async function hit(path: string, headers?: Record<string, string>) {
 
   try {
     const res = await fetch(`${base}${path}`, {
+      method,
       cache: "no-store",
       headers,
       signal: controller.signal,
@@ -51,10 +56,16 @@ export async function GET(req: Request) {
     const headers = cronSecret ? { "x-cron-secret": cronSecret } : undefined;
 
     const results = [];
-    results.push(await hit("/api/stripe/customers", headers));
-    results.push(await hit("/api/stripe/invoices", headers));
-    results.push(await hit("/api/logic/expected-revenue", headers));
-    results.push(await hit("/api/logic/alerts/missed", headers));
+
+    // Pull external data (read-only)
+    results.push(await hit("/api/stripe/customers", headers, "GET"));
+    results.push(await hit("/api/stripe/invoices", headers, "GET"));
+    results.push(await hit("/api/logic/expected-revenue", headers, "GET"));
+
+    // Compute expectations + generate alerts (POST)
+    results.push(await hit("/api/logic/alerts/missed", headers, "POST"));
+    results.push(await hit("/api/logic/alerts/no-client-activity", headers, "POST"));
+    results.push(await hit("/api/alerts/amount-drift", headers, "POST"));
 
     const ok = results.every((r) => r.ok);
 
