@@ -32,10 +32,12 @@ export async function GET() {
 
     if (!res.ok) {
       throw new HttpError(res.status, "Jira ping failed", {
-        code: "JIRA_PING_FAILED",
-        jira_status: res.status,
-        jira_body: json,
-      });
+    code: "JIRA_PING_FAILED",
+    details: {
+      jira_status: res.status,
+      jira_body: json,
+    },
+  });
     }
 
     return jsonOk({
