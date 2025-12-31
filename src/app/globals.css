@@ -1,8 +1,51 @@
+/* src/app/globals.css */
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fbfcfe;
+  --foreground: #0f172a;
+
+  --ops-bg: #fbfcfe;
+  --ops-surface: #ffffff;
+  --ops-subtle: #f6f8fc;
+  --ops-hover: #eef5f8;
+
+  --ops-border: #e3e9f2;
+  --ops-border-strong: #d4ddea;
+
+  --ops-text: #0f172a;
+  --ops-text-secondary: #334155;
+  --ops-text-muted: #64748b;
+  --ops-text-faint: #94a3b8;
+
+  /* Brand */
+  --ops-accent: #1ea7b6;
+  --ops-accent-2: #4f8fe6;
+  --ops-accent-dark: #0b6b78;
+  --ops-focus: rgba(30, 167, 182, 0.35);
+  --ops-brand-line: linear-gradient(90deg, rgba(30,167,182,0.9), rgba(79,143,230,0.9));
+
+  --ops-icon: #0f172a;
+
+  /* CTA tokens */
+  --ops-cta-bg: rgba(15, 23, 42, 0.03);
+  --ops-cta-bg-hover: rgba(15, 23, 42, 0.06);
+  --ops-cta-border: rgba(15, 23, 42, 0.14);
+  --ops-cta-text: #0f172a;
+
+  /* Shell color */
+  --ops-shell-tint: rgba(30, 167, 182, 0.06);
+  --ops-shell-tint-2: rgba(79, 143, 230, 0.05);
+  --ops-rail-bg: linear-gradient(180deg, rgba(30,167,182,0.10), rgba(79,143,230,0.06));
+  --ops-footer-bg: linear-gradient(90deg, rgba(30,167,182,0.08), rgba(79,143,230,0.06));
+
+  /* Severity */
+  --ops-sev-critical: #b42318;
+  --ops-sev-critical-bg: rgba(180, 35, 24, 0.10);
+  --ops-sev-high: #b54708;
+  --ops-sev-high-bg: rgba(181, 71, 8, 0.10);
+  --ops-sev-medium: #0f766e;
+  --ops-sev-medium-bg: rgba(15, 118, 110, 0.10);
 }
 
 @theme inline {
@@ -12,15 +55,42 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  color: var(--ops-text);
+  background:
+    radial-gradient(900px 520px at 10% 0%, rgba(30, 167, 182, 0.12), transparent 55%),
+    radial-gradient(900px 520px at 90% 0%, rgba(79, 143, 230, 0.12), transparent 55%),
+    var(--ops-bg);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+::selection {
+  background: rgba(30, 167, 182, 0.22);
+}
+
+/* --- Shared CTA class for <a> and <button> --- */
+.ops-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px; /* h-9 */
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--ops-cta-border);
+  background: var(--ops-cta-bg);
+  color: var(--ops-cta-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1; /* normalize baseline differences */
+  text-decoration: none !important; /* kills anchor underline */
+  white-space: nowrap;
+  user-select: none;
+}
+
+.ops-cta:hover {
+  background: var(--ops-cta-bg-hover);
+}
+
+.ops-cta:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ops-focus);
 }

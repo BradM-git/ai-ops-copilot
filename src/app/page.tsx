@@ -1,7 +1,7 @@
 // src/app/page.tsx
-import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import CloseAlertButton from "@/components/CloseAlertButton";
+import OpenPlatformLink from "@/components/OpenPlatformLink";
 import {
   presentAlert,
   type AlertRow,
@@ -20,8 +20,68 @@ function severityFromScore(score: number): Severity {
   return "medium";
 }
 
+function severityRowClasses(severity: Severity): { rail: string; badge: string; badgeText: string } {
+  switch (severity) {
+    case "critical":
+      return {
+        rail: "border-l-4 border-l-[var(--ops-sev-critical)]",
+        badge: "bg-[var(--ops-sev-critical-bg)]",
+        badgeText: "text-[var(--ops-sev-critical)]",
+      };
+    case "high":
+      return {
+        rail: "border-l-4 border-l-[var(--ops-sev-high)]",
+        badge: "bg-[var(--ops-sev-high-bg)]",
+        badgeText: "text-[var(--ops-sev-high)]",
+      };
+    default:
+      return {
+        rail: "border-l-4 border-l-[var(--ops-sev-medium)]",
+        badge: "bg-[var(--ops-sev-medium-bg)]",
+        badgeText: "text-[var(--ops-sev-medium)]",
+      };
+  }
+}
+
+function getOpenCta(alert: AlertRow, customer: CustomerRow | null): { platform: string; href: string } | null {
+  const system = (alert.source_system || "").toLowerCase();
+
+  if (system === "stripe") {
+    const entityType = (alert.primary_entity_type || "").toLowerCase();
+    const entityId = alert.primary_entity_id || "";
+    if (entityType === "invoice" && entityId) return { platform: "Stripe", href: `https://dashboard.stripe.com/invoices/${entityId}` };
+    if ((entityType === "payment_intent" || entityType === "paymentintent") && entityId)
+      return { platform: "Stripe", href: `https://dashboard.stripe.com/payments/${entityId}` };
+    if (customer?.stripe_customer_id) return { platform: "Stripe", href: `https://dashboard.stripe.com/customers/${customer.stripe_customer_id}` };
+    return { platform: "Stripe", href: "https://dashboard.stripe.com" };
+  }
+
+  if (system === "jira") {
+    const rawBase = process.env.JIRA_BASE_URL || process.env.NEXT_PUBLIC_JIRA_BASE_URL || "";
+    const baseUrl = rawBase ? rawBase.replace(/\/$/, "") : "";
+    if (!baseUrl) return null;
+
+    const peType = (alert.primary_entity_type || "").toLowerCase();
+    const peId = (alert.primary_entity_id || "").toLowerCase();
+    if (alert.type === "integration_error" && peType === "integration" && peId === "jira") return { platform: "Jira", href: baseUrl };
+
+    const ctx: any = (alert as any).context || {};
+    const issueKey = ctx.latest_issue_key || ctx.historical_latest_issue_key || (typeof ctx.last_issue === "string" ? ctx.last_issue : null);
+    if (issueKey && issueKey !== "unknown") return { platform: "Jira", href: `${baseUrl}/browse/${issueKey}` };
+
+    const projectKey = ctx.project_key;
+    if (projectKey) {
+      const jql = `project = ${projectKey} ORDER BY updated DESC`;
+      return { platform: "Jira", href: `${baseUrl}/issues/?jql=${encodeURIComponent(jql)}` };
+    }
+
+    return { platform: "Jira", href: baseUrl };
+  }
+
+  return null;
+}
+
 export default async function HomePage() {
-  // Alerts (open only) — ordered by created_at desc initially; registry scoring reorders after enrichment
   const { data: alertsRaw, error: alertsErr } = await supabase
     .from("alerts")
     .select(
@@ -32,20 +92,12 @@ export default async function HomePage() {
     .limit(50);
 
   if (alertsErr) {
-    return (
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Attention</h1>
-        <p className="mt-3 text-sm text-slate-700">Failed to load alerts: {alertsErr.message}</p>
-      </main>
-    );
+    return <div className="text-sm text-[var(--ops-text-secondary)]">Failed to load alerts: {alertsErr.message}</div>;
   }
 
-  // ✅ FIX: cast through unknown to satisfy TS (Supabase types can be “too wide”)
   const alerts = ((alertsRaw || []) as unknown) as AlertRow[];
-
   const customerIds = Array.from(new Set(alerts.map((a) => a.customer_id))).filter(Boolean);
 
-  // Customers
   const { data: customersRaw } = await supabase
     .from("customers")
     .select("id, account_id, stripe_customer_id, name, email, created_at")
@@ -54,7 +106,6 @@ export default async function HomePage() {
   const customers = ((customersRaw || []) as unknown) as CustomerRow[];
   const customersById = new Map(customers.map((c) => [c.id, c]));
 
-  // Expected revenue
   const { data: expectedRaw } = await supabase
     .from("expected_revenue")
     .select("id, customer_id, cadence_days, expected_amount, last_paid_at, confidence, created_at")
@@ -63,7 +114,6 @@ export default async function HomePage() {
   const expectedRows = ((expectedRaw || []) as unknown) as ExpectedRevenueRow[];
   const expectedByCustomer = new Map(expectedRows.map((e) => [e.customer_id, e]));
 
-  // Latest invoice per customer (cheap approximation: order by invoice_date desc then take first per customer)
   const { data: invoicesRaw } = await supabase
     .from("invoices")
     .select("id, customer_id, stripe_invoice_id, amount_due, status, invoice_date, paid_at, created_at")
@@ -72,11 +122,8 @@ export default async function HomePage() {
 
   const invoices = ((invoicesRaw || []) as unknown) as InvoiceRow[];
   const latestInvoiceByCustomer = new Map<string, InvoiceRow>();
-  for (const inv of invoices) {
-    if (!latestInvoiceByCustomer.has(inv.customer_id)) latestInvoiceByCustomer.set(inv.customer_id, inv);
-  }
+  for (const inv of invoices) if (!latestInvoiceByCustomer.has(inv.customer_id)) latestInvoiceByCustomer.set(inv.customer_id, inv);
 
-  // Latest payment per customer
   const { data: paymentsRaw } = await supabase
     .from("payments")
     .select("id, customer_id, stripe_payment_intent_id, amount, paid_at, created_at")
@@ -85,22 +132,13 @@ export default async function HomePage() {
 
   const payments = ((paymentsRaw || []) as unknown) as PaymentRow[];
   const latestPaymentByCustomer = new Map<string, PaymentRow>();
-  for (const p of payments) {
-    if (!latestPaymentByCustomer.has(p.customer_id)) latestPaymentByCustomer.set(p.customer_id, p);
-  }
+  for (const p of payments) if (!latestPaymentByCustomer.has(p.customer_id)) latestPaymentByCustomer.set(p.customer_id, p);
 
-  // Present + score (registry)
   const presented = alerts.map((a) => {
     const cust = customersById.get(a.customer_id) || null;
     const exp = expectedByCustomer.get(a.customer_id) || null;
     const inv = latestInvoiceByCustomer.get(a.customer_id) || null;
     const pay = latestPaymentByCustomer.get(a.customer_id) || null;
-
-    // overdueDays is only meaningful for “missed expected payment”; keep null for others unless you compute later
-    const overdueDays: number | null = null;
-
-    // Start with medium; score function + confidence/impact will lift it
-    const severity: Severity = "medium";
 
     const pres = presentAlert({
       alert: a,
@@ -108,92 +146,99 @@ export default async function HomePage() {
       expected: exp,
       latestInvoice: inv,
       latestPayment: pay,
-      overdueDays,
-      severity,
+      overdueDays: null,
+      severity: "medium",
     });
 
     const sev = severityFromScore(pres.score);
-
-    // Re-present with final severity to apply severity base (optional but keeps scoring consistent)
     const final = presentAlert({
       alert: a,
       customer: cust,
       expected: exp,
       latestInvoice: inv,
       latestPayment: pay,
-      overdueDays,
+      overdueDays: null,
       severity: sev,
     });
 
-    return { alert: a, customer: cust, presentation: final };
+    return { alert: a, customer: cust, presentation: final, severity: sev };
   });
 
-  // Sort by score desc
   presented.sort((x, y) => y.presentation.score - x.presentation.score);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <div className="flex items-start justify-between gap-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Attention</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Which client accounts need attention today — and why?
-          </p>
-        </div>
-        <Link
-          href="/debug"
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-        >
-          Debug
-        </Link>
-      </div>
-
+    <div>
       {presented.length === 0 ? (
-        <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-8 text-slate-700">
-          No attention items.
+        <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
+          <div className="text-sm font-semibold text-[var(--ops-text)]">No attention items.</div>
+          <div className="mt-2 text-sm text-[var(--ops-text-muted)]">If something drifts from expectation, it will appear here.</div>
         </div>
       ) : (
-        <div className="mt-8 space-y-4">
-          {presented.map(({ alert, customer, presentation }) => (
-            <div key={alert.id} className="rounded-2xl border border-slate-200 bg-white p-6">
-              <div className="flex items-start justify-between gap-6">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {presentation.domainLabel} · {customer?.name || customer?.email || "Customer"}
+        <div className="overflow-hidden rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)]">
+          {presented.map(({ alert, customer, presentation, severity }, idx) => {
+            const sevCls = severityRowClasses(severity);
+            const sevLabel = severity === "critical" ? "Critical" : severity === "high" ? "High" : "Medium";
+            const customerLabel = customer?.name || customer?.email || "Customer";
+            const cta = getOpenCta(alert, customer);
+
+            return (
+              <details
+                key={alert.id}
+                className={`group overflow-hidden rounded-l-xl ${sevCls.rail} ${idx === 0 ? "" : "border-t border-t-[var(--ops-border)]"}`}
+              >
+                <summary className="list-none cursor-pointer">
+                  <div className="flex items-center gap-3 px-4 py-2 hover:bg-[var(--ops-hover)]">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="truncate text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
+                          {presentation.domainLabel} · {customerLabel}
+                        </div>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${sevCls.badge} ${sevCls.badgeText}`}>
+                          {sevLabel}
+                        </span>
+                      </div>
+
+                      <div className="mt-1 truncate text-sm font-semibold text-[var(--ops-text)]">{presentation.title}</div>
+                      <div className="mt-0.5 truncate text-sm text-[var(--ops-text-secondary)]">{presentation.summary}</div>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-3">
+                      {cta ? <OpenPlatformLink href={cta.href} label={`Open in ${cta.platform}`} /> : null}
+                      <CloseAlertButton alertId={alert.id} />
+                    </div>
                   </div>
-                  <div className="mt-2 text-lg font-semibold text-slate-900">{presentation.title}</div>
-                  <div className="mt-1 text-sm text-slate-700">{presentation.summary}</div>
-                  <div className="mt-3 text-xs text-slate-500">{presentation.confidenceLabel}</div>
-                </div>
+                </summary>
 
-                <div className="shrink-0">
-                  <CloseAlertButton alertId={alert.id} />
-                </div>
-              </div>
+                <div className="px-4 pb-4 pt-2">
+                  <div className="text-xs text-[var(--ops-text-faint)]">{presentation.confidenceLabel}</div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Expectation</div>
-                  <div className="mt-2 text-sm text-slate-800">{presentation.expectation}</div>
-                </div>
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Observation</div>
-                  <div className="mt-2 text-sm text-slate-800">{presentation.observation}</div>
-                </div>
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Drift</div>
-                  <div className="mt-2 text-sm text-slate-800">{presentation.drift}</div>
-                </div>
-              </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <div className="rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">Expectation</div>
+                      <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.expectation}</div>
+                    </div>
 
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Next step</div>
-                <div className="mt-2 text-sm text-slate-800">{presentation.nextStep}</div>
-              </div>
-            </div>
-          ))}
+                    <div className="rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">Observation</div>
+                      <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.observation}</div>
+                    </div>
+
+                    <div className="rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">Drift</div>
+                      <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.drift}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">Next step</div>
+                    <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.nextStep}</div>
+                  </div>
+                </div>
+              </details>
+            );
+          })}
         </div>
       )}
-    </main>
+    </div>
   );
 }

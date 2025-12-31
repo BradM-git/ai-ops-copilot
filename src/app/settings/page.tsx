@@ -114,9 +114,10 @@ export default async function SettingsPage() {
 
   if (cErr) {
     return (
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Settings</h1>
-        <p className="mt-3 text-sm text-slate-700">Failed to load customers: {cErr.message}</p>
+      <main className="px-0">
+        <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
+          <p className="text-sm text-[var(--ops-text-secondary)]">Failed to load customers: {cErr.message}</p>
+        </div>
       </main>
     );
   }
@@ -127,9 +128,10 @@ export default async function SettingsPage() {
     await ensureDefaults(admin, customers);
   } catch (e: any) {
     return (
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Settings</h1>
-        <p className="mt-3 text-sm text-slate-700">Defaults bootstrap failed: {String(e?.message || e)}</p>
+      <main className="px-0">
+        <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
+          <p className="text-sm text-[var(--ops-text-secondary)]">Defaults bootstrap failed: {String(e?.message || e)}</p>
+        </div>
       </main>
     );
   }
@@ -150,11 +152,12 @@ export default async function SettingsPage() {
 
   if (setErr || stateErr) {
     return (
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Settings</h1>
-        <p className="mt-3 text-sm text-slate-700">
-          Failed to load settings/state: {[setErr?.message, stateErr?.message].filter(Boolean).join(" / ")}
-        </p>
+      <main className="px-0">
+        <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
+          <p className="text-sm text-[var(--ops-text-secondary)]">
+            Failed to load settings/state: {[setErr?.message, stateErr?.message].filter(Boolean).join(" / ")}
+          </p>
+        </div>
       </main>
     );
   }
@@ -186,7 +189,6 @@ export default async function SettingsPage() {
 
     const now = new Date().toISOString();
 
-    // 1) Save status/state
     const { error: stErr } = await admin.from("customer_state").upsert(
       {
         customer_id: customerId,
@@ -198,7 +200,6 @@ export default async function SettingsPage() {
     );
     if (stErr) throw new Error(`Failed to update customer_state: ${stErr.message}`);
 
-    // 2) Save thresholds/settings
     const { error: sErr } = await admin.from("customer_settings").upsert(
       {
         customer_id: customerId,
@@ -213,9 +214,7 @@ export default async function SettingsPage() {
     );
     if (sErr) throw new Error(`Failed to update customer_settings: ${sErr.message}`);
 
-    // ✅ 3) NEW: immediate suppression behavior
-    // If customer is not active, resolve all open client alerts for them right now.
-    // (integration_error alerts have customer_id NULL so are unaffected)
+    // ✅ immediate suppression behavior
     if (!isActiveStatus(status)) {
       const { error: supErr } = await admin
         .from("alerts")
@@ -237,13 +236,10 @@ export default async function SettingsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Settings</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        Pilot controls only: client status suppression + per-client thresholds. Defaults are opinionated; override when needed.
-      </p>
+    <main className="px-0">
+      {/* Removed the Settings header + description copy */}
 
-      <div className="mt-8 space-y-4">
+      <div className="space-y-4">
         {customers.map((c) => {
           const s = settingsById.get(c.id);
           const st = stateById.get(c.id);
@@ -251,15 +247,15 @@ export default async function SettingsPage() {
           const name = c.name || c.email || c.id.slice(0, 8);
 
           return (
-            <div key={c.id} className="rounded-2xl border border-slate-200 bg-white p-6">
+            <div key={c.id} className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Customer</div>
-                  <div className="mt-1 text-lg font-semibold text-slate-900">{name}</div>
-                  <div className="mt-1 text-xs text-slate-500">id: {c.id}</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">Customer</div>
+                  <div className="mt-1 text-lg font-semibold text-[var(--ops-text)]">{name}</div>
+                  <div className="mt-1 text-xs text-[var(--ops-text-faint)]">id: {c.id}</div>
                 </div>
 
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-[var(--ops-text-faint)]">
                   <div>Settings updated: {s?.updated_at ? new Date(s.updated_at).toLocaleString() : "—"}</div>
                   <div>Status updated: {st?.updated_at ? new Date(st.updated_at).toLocaleString() : "—"}</div>
                 </div>
@@ -268,15 +264,15 @@ export default async function SettingsPage() {
               <form action={updateCustomer} className="mt-6 grid gap-4 md:grid-cols-2">
                 <input type="hidden" name="customer_id" value={c.id} />
 
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client status</div>
+                <div className="rounded-xl border border-[var(--ops-border)] bg-white/60 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">Client status</div>
                   <div className="mt-3 grid gap-3">
-                    <label className="text-sm text-slate-700">
+                    <label className="text-sm text-[var(--ops-text-secondary)]">
                       Status
                       <select
                         name="status"
                         defaultValue={st?.status || "active"}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-[var(--ops-border)] bg-[var(--ops-surface)] px-3 py-2 text-sm text-[var(--ops-text)]"
                       >
                         <option value="active">active</option>
                         <option value="onboarding">onboarding</option>
@@ -285,27 +281,27 @@ export default async function SettingsPage() {
                       </select>
                     </label>
 
-                    <label className="text-sm text-slate-700">
+                    <label className="text-sm text-[var(--ops-text-secondary)]">
                       Reason (optional)
                       <input
                         name="reason"
                         defaultValue={st?.reason || ""}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-[var(--ops-border)] bg-[var(--ops-surface)] px-3 py-2 text-sm text-[var(--ops-text)]"
                         placeholder="e.g. onboarding phase, seasonal pause"
                       />
                     </label>
 
-                    <div className="text-xs text-slate-500">
+                    <div className="text-xs text-[var(--ops-text-faint)]">
                       Non-active statuses suppress client alerts immediately (they resolve) to avoid “technically true but practically wrong” noise.
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Signal thresholds</div>
+                <div className="rounded-xl border border-[var(--ops-border)] bg-white/60 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">Signal thresholds</div>
 
                   <div className="mt-3 grid gap-3">
-                    <label className="text-sm text-slate-700">
+                    <label className="text-sm text-[var(--ops-text-secondary)]">
                       Missed payment grace days
                       <input
                         name="missed_payment_grace_days"
@@ -313,11 +309,11 @@ export default async function SettingsPage() {
                         min={0}
                         max={14}
                         defaultValue={s?.missed_payment_grace_days ?? 2}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-[var(--ops-border)] bg-[var(--ops-surface)] px-3 py-2 text-sm text-[var(--ops-text)]"
                       />
                     </label>
 
-                    <label className="text-sm text-slate-700">
+                    <label className="text-sm text-[var(--ops-text-secondary)]">
                       Missed payment low-confidence cutoff (0–1)
                       <input
                         name="missed_payment_low_conf_cutoff"
@@ -326,25 +322,25 @@ export default async function SettingsPage() {
                         min={0}
                         max={1}
                         defaultValue={s?.missed_payment_low_conf_cutoff ?? 0.5}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-[var(--ops-border)] bg-[var(--ops-surface)] px-3 py-2 text-sm text-[var(--ops-text)]"
                       />
                     </label>
 
-                    <label className="text-sm text-slate-700">
+                    <label className="text-sm text-[var(--ops-text-secondary)]">
                       Low-confidence minimum risk (cents)
                       <input
                         name="missed_payment_low_conf_min_risk_cents"
                         type="number"
                         min={0}
                         defaultValue={s?.missed_payment_low_conf_min_risk_cents ?? 500000}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-[var(--ops-border)] bg-[var(--ops-surface)] px-3 py-2 text-sm text-[var(--ops-text)]"
                       />
-                      <div className="mt-1 text-xs text-slate-500">
+                      <div className="mt-1 text-xs text-[var(--ops-text-faint)]">
                         Current: {money(s?.missed_payment_low_conf_min_risk_cents ?? 500000)}. Below this, low-confidence “missed” alerts are suppressed.
                       </div>
                     </label>
 
-                    <label className="text-sm text-slate-700">
+                    <label className="text-sm text-[var(--ops-text-secondary)]">
                       Payment amount drift threshold (0–1)
                       <input
                         name="amount_drift_threshold_pct"
@@ -353,26 +349,23 @@ export default async function SettingsPage() {
                         min={0.05}
                         max={1}
                         defaultValue={s?.amount_drift_threshold_pct ?? 0.25}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-[var(--ops-border)] bg-[var(--ops-surface)] px-3 py-2 text-sm text-[var(--ops-text)]"
                       />
                     </label>
 
-                    <label className="text-sm text-slate-700">
+                    <label className="text-sm text-[var(--ops-text-secondary)]">
                       Jira activity lookback (e.g. 7d, 14d)
                       <input
                         name="jira_activity_lookback"
                         defaultValue={s?.jira_activity_lookback ?? "7d"}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-[var(--ops-border)] bg-[var(--ops-surface)] px-3 py-2 text-sm text-[var(--ops-text)]"
                       />
                     </label>
                   </div>
                 </div>
 
                 <div className="md:col-span-2 flex items-center justify-end">
-                  <button
-                    type="submit"
-                    className="rounded-xl border border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                  >
+                  <button type="submit" className="ops-cta bg-[var(--ops-accent-dark)] text-white border-transparent hover:opacity-95">
                     Save
                   </button>
                 </div>
