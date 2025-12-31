@@ -62,6 +62,13 @@ export async function GET(req: Request) {
     results.push(await hit("/api/stripe/invoices", headers, "GET"));
     results.push(await hit("/api/logic/expected-revenue", headers, "GET"));
 
+    // ✅ NEW: ensure every customer has settings/state rows
+    results.push(await hit("/api/logic/customer-defaults", headers, "GET"));
+
+    // ✅ NEW: globally suppress alerts for customers not active
+    // (prevents old open alerts lingering when customer is paused/onboarding/etc.)
+    results.push(await hit("/api/logic/alerts/suppress-inactive", headers, "POST"));
+
     // Compute expectations + generate alerts (POST)
     results.push(await hit("/api/logic/alerts/missed", headers, "POST"));
     results.push(await hit("/api/logic/alerts/no-client-activity", headers, "POST"));

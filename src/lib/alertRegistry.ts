@@ -185,13 +185,34 @@ export function presentAlert(params: {
     ? confidenceLabelFromAlert(a.confidence, a.confidence_reason)
     : confidenceLabelFromFloat(exp?.confidence ?? null);
 
-  // --- Source-agnostic “model copy”: Expectation / Observation / Drift / Next step ---
-  // We keep a per-type registry here. Add new types by extending this switch.
   switch (a.type) {
+    // ✅ NEW: integration-level failure (never blame the client)
+    case "integration_error": {
+      const domainLabel = "System";
+      const source = (a.source_system || a.context?.source || "integration").toString().toUpperCase();
+
+      const title = `Data source unavailable: ${source}`;
+      const summary = a.message || "A connected system could not be read, so some client checks may be blind.";
+
+      const expectation = "Connected systems should be readable so drift can be evaluated.";
+      const observation = "An upstream API/auth/config error prevented reading data.";
+      const drift = "No client conclusion can be trusted until the connection is restored.";
+      const nextStep = "Fix the integration (credentials, permissions, base URL, or mapping), then re-run the cron/generator.";
+
+      const score = scoreAlert({
+        severity: "high",
+        alert: a,
+        overdueDays: null,
+        expectedConfidenceFloat: null,
+      });
+
+      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel: "High confidence", score };
+    }
+
     case "missed_expected_payment": {
       const domainLabel = "Revenue";
 
-      // Expectation: prefer alert.expected_at + expected_amount_cents if set by generator
+      // Expectation
       let expectation = `${name} is expected to pay on a regular cadence.`;
       if (a.expected_at) {
         expectation = `${name} is expected to pay by ${formatDateShort(a.expected_at)}.`;
@@ -222,19 +243,16 @@ export function presentAlert(params: {
       const amtText = amountAtRisk ? `${fmtMoneyCents(amountAtRisk)} at risk.` : "Amount at risk unknown.";
       const drift = `${overdueText} ${amtText}`;
 
-      // Title + summary (tight, deterministic)
       const title = "Payment expected but not received";
-      const expectedForSummary = a.expected_amount_cents != null ? a.expected_amount_cents : amountAtRisk || null;
 
+      const expectedForSummary = a.expected_amount_cents != null ? a.expected_amount_cents : amountAtRisk || null;
       const summaryParts = [
         expectedForSummary ? `${fmtMoneyCents(expectedForSummary)} expected` : null,
         params.overdueDays != null ? `${params.overdueDays} days overdue` : null,
       ].filter(Boolean);
 
-      const summary =
-        summaryParts.length > 0 ? summaryParts.join(" · ") : a.message || "Deviation from expectation detected.";
+      const summary = summaryParts.length > 0 ? summaryParts.join(" · ") : a.message || "Deviation from expectation detected.";
 
-      // Next step: source-agnostic wording but actionable
       const nextStep =
         [
           "Confirm whether payment was attempted or received outside the normal path.",
@@ -249,20 +267,9 @@ export function presentAlert(params: {
         expectedConfidenceFloat: exp?.confidence ?? null,
       });
 
-      return {
-        domainLabel,
-        title,
-        summary,
-        expectation,
-        observation,
-        drift,
-        nextStep,
-        confidenceLabel,
-        score,
-      };
+      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel, score };
     }
 
-    // ✅ NEW SIGNAL: Payment Amount Drift
     case "payment_amount_drift": {
       const domainLabel = "Revenue";
 
@@ -279,14 +286,11 @@ export function presentAlert(params: {
           ? `${observedStr} observed · ~${expectedStr} expected`
           : a.message || "Payment amount deviates from historical norm.";
 
-      // Expectation
       const expectation = `${name} typically pays around ${expectedStr} per payment.`;
 
-      // Observation: anchor on observed_at if present
       const obsDate = a.observed_at ? formatDateShort(a.observed_at) : pay?.paid_at ? formatDateShort(pay.paid_at) : "—";
       const observation = `Most recent payment on ${obsDate} was ${observedStr}.`;
 
-      // Drift: delta + % if possible
       let drift = amountAtRisk ? `${fmtMoneyCents(amountAtRisk)} deviation from expected.` : "Deviation detected.";
       if (expectedCents != null && observedCents != null && expectedCents > 0) {
         const pct = Math.round((Math.abs(observedCents - expectedCents) / expectedCents) * 100);
@@ -304,24 +308,13 @@ export function presentAlert(params: {
       const score = scoreAlert({
         severity: params.severity,
         alert: a,
-        overdueDays: params.overdueDays, // usually null/0 for this signal, but harmless
+        overdueDays: params.overdueDays,
         expectedConfidenceFloat: exp?.confidence ?? null,
       });
 
-      return {
-        domainLabel,
-        title,
-        summary,
-        expectation,
-        observation,
-        drift,
-        nextStep,
-        confidenceLabel,
-        score,
-      };
+      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel, score };
     }
 
-    // ✅ NEW SIGNAL: No Recent Client Activity (Jira-backed)
     case "no_recent_client_activity": {
       const domainLabel = "Delivery";
 
@@ -345,17 +338,7 @@ export function presentAlert(params: {
         expectedConfidenceFloat: null,
       });
 
-      return {
-        domainLabel,
-        title,
-        summary,
-        expectation,
-        observation,
-        drift,
-        nextStep,
-        confidenceLabel,
-        score,
-      };
+      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel, score };
     }
 
     default: {
@@ -375,17 +358,7 @@ export function presentAlert(params: {
         expectedConfidenceFloat: exp?.confidence ?? null,
       });
 
-      return {
-        domainLabel,
-        title,
-        summary,
-        expectation,
-        observation,
-        drift,
-        nextStep,
-        confidenceLabel,
-        score,
-      };
+      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel, score };
     }
   }
 }

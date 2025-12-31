@@ -25,8 +25,46 @@ function median(nums: number[]): number | null {
 
 const BASELINE_SAMPLE_SIZE = 6;
 const MIN_HISTORY = 4;
-// drift threshold (example: 25% difference) — keep whatever you already had if different
-const DRIFT_PCT = 0.25;
+
+// default drift threshold (fallback)
+const DEFAULT_DRIFT_PCT = 0.25;
+
+async function getDriftThresholdPct(admin: ReturnType<typeof supabaseAdmin>, customerId: string) {
+  // Uses per-customer setting if present (what you asked for), otherwise fallback.
+  const { data, error } = await admin
+    .from("customer_settings")
+    .select("amount_drift_threshold_pct")
+    .eq("customer_id", customerId)
+    .maybeSingle();
+
+  if (error || !data) return DEFAULT_DRIFT_PCT;
+
+  const v = Number((data as any).amount_drift_threshold_pct);
+  if (!Number.isFinite(v)) return DEFAULT_DRIFT_PCT;
+
+  // clamp to sane range
+  return Math.max(0.05, Math.min(1, v));
+}
+
+async function getCustomerStatus(admin: ReturnType<typeof supabaseAdmin>, customerId: string) {
+  const { data, error } = await admin
+    .from("customer_state")
+    .select("status")
+    .eq("customer_id", customerId)
+    .maybeSingle();
+
+  if (error || !data?.status) return "active";
+  return String((data as any).status);
+}
+
+async function resolveSlotIfExists(admin: ReturnType<typeof supabaseAdmin>, slotId: string, patch?: any) {
+  const { error } = await admin
+    .from("alerts")
+    .update({ status: "resolved", ...(patch || {}) })
+    .eq("id", slotId);
+
+  if (error) throw new HttpError(500, "Failed to resolve alert slot", { details: error });
+}
 
 export async function POST(req: Request) {
   try {
@@ -45,9 +83,37 @@ export async function POST(req: Request) {
     let created = 0;
     let updated = 0;
     let resolved = 0;
+    let suppressed = 0;
 
     for (const customerId of customerIds) {
       watched += 1;
+
+      // Single-slot semantics: always work against the latest alert row for this customer+type (open OR resolved)
+      const { data: slot, error: slotErr } = await admin
+        .from("alerts")
+        .select("id, status")
+        .eq("customer_id", customerId)
+        .eq("type", "payment_amount_drift")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (slotErr) throw new HttpError(500, "Failed to read alert slot", { details: slotErr });
+
+      // Respect customer status (active only). If not active, ensure any slot is resolved.
+      const status = await getCustomerStatus(admin, customerId);
+      if (status !== "active") {
+        if (slot?.id && slot.status === "open") {
+          await resolveSlotIfExists(admin, slot.id, {
+            confidence: "high",
+            confidence_reason: `suppressed: customer not active (${status})`,
+            context: { suppression_reason: "customer_status", customer_status: status },
+          });
+          resolved += 1;
+        }
+        suppressed += 1;
+        continue;
+      }
 
       // get latest payments (paid_at desc)
       const { data: payRows, error: pErr } = await admin
@@ -67,25 +133,10 @@ export async function POST(req: Request) {
       }>;
 
       // need enough history
-      // NOTE: allow amounts null in rows, but we’ll filter them before median calc
       if (paid.length < MIN_HISTORY) {
-        // resolve any existing open alert for this customer
-        const { data: existing, error: eErr } = await admin
-          .from("alerts")
-          .select("id, status")
-          .eq("customer_id", customerId)
-          .eq("type", "payment_amount_drift")
-          .eq("status", "open")
-          .maybeSingle();
-
-        if (eErr) throw new HttpError(500, "Failed to read existing alert", { details: eErr });
-
-        if (existing?.id) {
-          const { error: rErr } = await admin
-            .from("alerts")
-            .update({ status: "resolved" })
-            .eq("id", existing.id);
-          if (rErr) throw new HttpError(500, "Failed to resolve alert", { details: rErr });
+        // resolve slot if it is open
+        if (slot?.id && slot.status === "open") {
+          await resolveSlotIfExists(admin, slot.id);
           resolved += 1;
         }
         continue;
@@ -93,76 +144,45 @@ export async function POST(req: Request) {
 
       const observed = paid[0];
 
-      // ✅ FIX: filter out null/invalid amounts before median
-      const baselinePoolRaw = paid
-        .slice(1, 1 + BASELINE_SAMPLE_SIZE)
-        .map((p) => p.amount);
-
+      // filter out null/invalid amounts before median
+      const baselinePoolRaw = paid.slice(1, 1 + BASELINE_SAMPLE_SIZE).map((p) => p.amount);
       const baselinePool = baselinePoolRaw.filter(isNumber);
 
-      // If we can’t compute a baseline reliably, resolve existing and move on
       const baseline = median(baselinePool);
       if (baseline == null || baseline <= 0 || !isNumber(observed.amount)) {
-        const { data: existing, error: eErr } = await admin
-          .from("alerts")
-          .select("id, status")
-          .eq("customer_id", customerId)
-          .eq("type", "payment_amount_drift")
-          .eq("status", "open")
-          .maybeSingle();
-
-        if (eErr) throw new HttpError(500, "Failed to read existing alert", { details: eErr });
-
-        if (existing?.id) {
-          const { error: rErr } = await admin
-            .from("alerts")
-            .update({ status: "resolved" })
-            .eq("id", existing.id);
-          if (rErr) throw new HttpError(500, "Failed to resolve alert", { details: rErr });
+        if (slot?.id && slot.status === "open") {
+          await resolveSlotIfExists(admin, slot.id);
           resolved += 1;
         }
         continue;
       }
+
+      const driftPctThreshold = await getDriftThresholdPct(admin, customerId);
 
       const observedAmount = observed.amount;
       const diff = Math.abs(observedAmount - baseline);
       const pct = diff / baseline;
 
-      // find any existing open alert
-      const { data: existing, error: eErr } = await admin
-        .from("alerts")
-        .select("id, status")
-        .eq("customer_id", customerId)
-        .eq("type", "payment_amount_drift")
-        .eq("status", "open")
-        .maybeSingle();
-
-      if (eErr) throw new HttpError(500, "Failed to read existing alert", { details: eErr });
-
-      if (pct < DRIFT_PCT) {
-        // no drift -> resolve existing if open
-        if (existing?.id) {
-          const { error: rErr } = await admin
-            .from("alerts")
-            .update({
-              status: "resolved",
-              observed_at: observed.paid_at,
-              context: {
-                expected_amount_cents: baseline,
-                observed_amount_cents: observedAmount,
-                baseline_sample_size: baselinePool.length,
-              },
-            })
-            .eq("id", existing.id);
-
-          if (rErr) throw new HttpError(500, "Failed to resolve alert", { details: rErr });
+      if (pct < driftPctThreshold) {
+        // no drift -> resolve slot if open (and update context so we know it cleared)
+        if (slot?.id && slot.status === "open") {
+          await resolveSlotIfExists(admin, slot.id, {
+            observed_at: observed.paid_at,
+            context: {
+              expected_amount_cents: baseline,
+              observed_amount_cents: observedAmount,
+              baseline_sample_size: baselinePool.length,
+              threshold_pct: driftPctThreshold,
+            },
+          });
           resolved += 1;
         }
         continue;
       }
 
-      // drift detected -> create or update alert
+      // drift detected -> open slot (update latest row if exists, else insert first-ever row)
       const amountAtRisk = diff; // cents
+
       const payload = {
         customer_id: customerId,
         type: "payment_amount_drift",
@@ -173,21 +193,24 @@ export async function POST(req: Request) {
         primary_entity_type: "customer",
         primary_entity_id: customerId,
         confidence: "medium" as const,
-        confidence_reason: `Observed differs from baseline by ${Math.round(pct * 100)}%.`,
-        expected_amount_cents: baseline,
-        observed_amount_cents: observedAmount,
+        confidence_reason: `Observed differs from baseline by ${Math.round(pct * 100)}% (threshold ${Math.round(
+          driftPctThreshold * 100
+        )}%).`,
         expected_at: null,
         observed_at: observed.paid_at,
         context: {
+          expected_amount_cents: baseline,
+          observed_amount_cents: observedAmount,
           baseline_sample_size: baselinePool.length,
-          baseline_amounts: baselinePool, // already numbers only
+          baseline_amounts: baselinePool,
           observed_payment_id: observed.id,
+          threshold_pct: driftPctThreshold,
         },
       };
 
-      if (existing?.id) {
-        const { error: uErr } = await admin.from("alerts").update(payload).eq("id", existing.id);
-        if (uErr) throw new HttpError(500, "Failed to update alert", { details: uErr });
+      if (slot?.id) {
+        const { error: uErr } = await admin.from("alerts").update(payload).eq("id", slot.id);
+        if (uErr) throw new HttpError(500, "Failed to update alert slot", { details: uErr });
         updated += 1;
       } else {
         const { error: iErr } = await admin.from("alerts").insert(payload);
@@ -196,7 +219,7 @@ export async function POST(req: Request) {
       }
     }
 
-    return jsonOk({ ok: true, watched, created, updated, resolved });
+    return jsonOk({ ok: true, watched, created, updated, resolved, suppressed });
   } catch (err) {
     return jsonErr(err);
   }
