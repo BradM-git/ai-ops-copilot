@@ -1,6 +1,6 @@
-import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { HttpError, jsonErr, jsonOk, requireEnv } from "@/lib/api";
+import { getStripe, listAllInvoices } from "@/integrations/stripe";
 
 export const runtime = "nodejs";
 
@@ -8,27 +8,6 @@ function getSupabase() {
   const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   return createClient(url, key);
-}
-
-function getStripe() {
-  const key = requireEnv("STRIPE_SECRET_KEY");
-  // Do not hardcode apiVersion; keeps typings + Stripe account settings aligned
-  return new Stripe(key);
-}
-
-async function listAllInvoices(stripe: Stripe, maxPages = 25) {
-  const out: Stripe.Invoice[] = [];
-  let starting_after: string | undefined;
-
-  for (let page = 0; page < maxPages; page++) {
-    const res = await stripe.invoices.list({ limit: 100, starting_after });
-    out.push(...res.data);
-    if (!res.has_more) break;
-    starting_after = res.data[res.data.length - 1]?.id;
-    if (!starting_after) break;
-  }
-
-  return out;
 }
 
 export async function GET() {
@@ -52,7 +31,7 @@ export async function GET() {
       map.set((c as any).stripe_customer_id, (c as any).id);
     }
 
-    let invoices: Stripe.Invoice[];
+    let invoices: any[];
     try {
       invoices = await listAllInvoices(stripe);
     } catch (e) {
