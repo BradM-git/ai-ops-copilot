@@ -49,7 +49,9 @@ async function hit(
 export async function GET(req: Request) {
   try {
     if (!cronAuthorized(req)) {
-      throw new HttpError(401, "Unauthorized cron request", { code: "CRON_UNAUTHORIZED" });
+      throw new HttpError(401, "Unauthorized cron request", {
+        code: "CRON_UNAUTHORIZED",
+      });
     }
 
     const cronSecret = process.env.CRON_SECRET;
@@ -62,14 +64,13 @@ export async function GET(req: Request) {
     results.push(await hit("/api/stripe/invoices", headers, "GET"));
     results.push(await hit("/api/logic/expected-revenue", headers, "GET"));
 
-    // ✅ NEW: ensure every customer has settings/state rows
+    // ✅ ensure every customer has settings/state rows
     results.push(await hit("/api/logic/customer-defaults", headers, "GET"));
 
-    // ✅ NEW: globally suppress alerts for customers not active
-    // (prevents old open alerts lingering when customer is paused/onboarding/etc.)
+    // ✅ globally suppress alerts for inactive customers
     results.push(await hit("/api/logic/alerts/suppress-inactive", headers, "POST"));
 
-    // Compute expectations + generate alerts (POST)
+    // Compute expectations + generate alerts
     results.push(await hit("/api/logic/alerts/missed", headers, "POST"));
     results.push(await hit("/api/logic/alerts/no-client-activity", headers, "POST"));
     results.push(await hit("/api/alerts/amount-drift", headers, "POST"));
@@ -78,7 +79,7 @@ export async function GET(req: Request) {
 
     return jsonOk(
       { ran: true, ok, results },
-      { status: ok ? 200 : 207 } // 207 = multi-status (partial failure)
+      { status: ok ? 200 : 207 }
     );
   } catch (err) {
     return jsonErr(err);
