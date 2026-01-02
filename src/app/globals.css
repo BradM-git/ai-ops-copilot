@@ -1,146 +1,161 @@
 /* src/app/globals.css */
 @import "tailwindcss";
 
-/* =========================================================
-   Base theme tokens
-   ========================================================= */
+/* =========================
+   AMARGOSA THEME (DEFAULT: DARK)
+   ========================= */
 :root {
-  /* Backgrounds */
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  /* Core */
+  --ops-bg: #121212;
+  --ops-text: #ffffff;
 
-  --ops-bg: #f8fafc;
-  --ops-surface: #ffffff;
-  --ops-subtle: #f1f5f9;
-  --ops-hover: #e8eef4;
+  /* Brand */
+  --ops-accent: #f25c2a;
+  --ops-accent-dark: #cc461d;
+  --ops-accent-soft: #ffd3c6;
 
-  /* Borders */
-  --ops-border: #e2e8f0;
-  --ops-border-strong: #cbd5e1;
+  /* Neutrals */
+  --ops-border: rgba(255, 255, 255, 0.12);
+  --ops-border-strong: rgba(255, 255, 255, 0.18);
+  --ops-hover: rgba(255, 255, 255, 0.06);
 
-  /* Text */
-  --ops-text: #0f172a;
-  --ops-text-secondary: #334155;
-  --ops-text-muted: #64748b;
-  --ops-text-faint: #94a3b8;
+  --ops-text-muted: rgba(255, 255, 255, 0.65);
+  --ops-text-faint: rgba(255, 255, 255, 0.45);
 
-  /* =========================================================
-     Accent: Emerald (clean, calm, ops-serious)
-     ========================================================= */
-  --ops-accent: #0f766e;          /* emerald */
-  --ops-accent-dark: #115e59;     /* deep emerald */
-  --ops-accent-2: #1f2937;        /* graphite */
+  /* Surfaces */
+  --ops-surface: rgba(255, 255, 255, 0.04);
+  --ops-surface-2: rgba(255, 255, 255, 0.06);
 
-  --ops-focus: rgba(15, 118, 110, 0.35);
+  /* Structural */
+  --ops-brand-line: var(--ops-accent);
+  --ops-rail-bg: var(--ops-bg);
+  --ops-footer-bg: rgba(255, 255, 255, 0.02);
 
-  --ops-brand-line: linear-gradient(
-    90deg,
-    rgba(15,118,110,0.95),
-    rgba(31,41,55,0.95)
-  );
+  /* Focus ring */
+  --ops-focus: rgba(242, 92, 42, 0.55);
 
-  /* Icons */
-  --ops-icon: #0f172a;
-
-  /* =========================================================
-     Shell (header / rail / footer)
-     ========================================================= */
-  --ops-shell-tint: rgba(15, 118, 110, 0.06);
-  --ops-shell-tint-2: rgba(31, 41, 55, 0.05);
-
-  --ops-rail-bg: linear-gradient(
-    180deg,
-    rgba(31,41,55,0.12),
-    rgba(15,118,110,0.10)
-  );
-
-  --ops-footer-bg: linear-gradient(
-    90deg,
-    rgba(31,41,55,0.10),
-    rgba(15,118,110,0.08)
-  );
-
-  /* =========================================================
-     CTA tokens
-     ========================================================= */
-  --ops-cta-bg: rgba(15, 23, 42, 0.04);
-  --ops-cta-bg-hover: rgba(15, 23, 42, 0.07);
-  --ops-cta-border: rgba(15, 23, 42, 0.14);
-  --ops-cta-text: #0f172a;
-
-  /* =========================================================
-     Severity (semantic, unchanged)
-     ========================================================= */
+  /* Severity tokens (for triage colors) */
   --ops-sev-critical: #b42318;
-  --ops-sev-critical-bg: rgba(180, 35, 24, 0.10);
+  --ops-sev-critical-bg: rgba(180, 35, 24, 0.18);
 
   --ops-sev-high: #b54708;
-  --ops-sev-high-bg: rgba(181, 71, 8, 0.10);
+  --ops-sev-high-bg: rgba(181, 71, 8, 0.18);
 
   --ops-sev-medium: #0f766e;
-  --ops-sev-medium-bg: rgba(15, 118, 110, 0.10);
+  --ops-sev-medium-bg: rgba(15, 118, 110, 0.18);
+
+  /* =========================
+     CTA tokens (dark default)
+     ========================= */
+  --ops-cta-primary-bg: #000000;
+  --ops-cta-primary-text: #ffffff;
+  --ops-cta-primary-border: var(--ops-accent);
 }
 
-/* =========================================================
-   Tailwind theme bindings
-   ========================================================= */
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* =========================
+   LIGHT MODE OVERRIDES
+   Toggle by applying class "theme-light" to <html>
+   ========================= */
+html.theme-light {
+  --ops-bg: #ffffff;
+  --ops-text: #121212;
+
+  --ops-accent: #f25c2a;
+  --ops-accent-dark: #cc461d;
+  --ops-accent-soft: #ffd3c6;
+
+  --ops-border: rgba(18, 18, 18, 0.12);
+  --ops-border-strong: rgba(18, 18, 18, 0.18);
+  --ops-hover: rgba(18, 18, 18, 0.05);
+
+  --ops-text-muted: rgba(18, 18, 18, 0.62);
+  --ops-text-faint: rgba(18, 18, 18, 0.42);
+
+  --ops-surface: rgba(18, 18, 18, 0.04);
+  --ops-surface-2: rgba(18, 18, 18, 0.06);
+
+  --ops-brand-line: var(--ops-accent);
+  --ops-rail-bg: #ffffff;
+  --ops-footer-bg: rgba(18, 18, 18, 0.02);
+
+  --ops-focus: rgba(242, 92, 42, 0.45);
+
+  /* Severity stays consistent, just a touch lighter bg */
+  --ops-sev-critical: #b42318;
+  --ops-sev-critical-bg: rgba(180, 35, 24, 0.12);
+
+  --ops-sev-high: #b54708;
+  --ops-sev-high-bg: rgba(181, 71, 8, 0.12);
+
+  --ops-sev-medium: #0f766e;
+  --ops-sev-medium-bg: rgba(15, 118, 110, 0.12);
+
+  /* =========================
+     CTA tokens (light overrides)
+     ========================= */
+  --ops-cta-primary-bg: #ffffff;
+  --ops-cta-primary-text: #121212;
+  --ops-cta-primary-border: var(--ops-accent);
 }
 
-/* =========================================================
-   Global body background
-   ========================================================= */
+/* Base */
+html,
 body {
+  height: 100%;
+}
+
+body {
+  background: var(--ops-bg);
   color: var(--ops-text);
-  background:
-    radial-gradient(
-      900px 520px at 10% 0%,
-      rgba(15,118,110,0.10),
-      transparent 55%
-    ),
-    radial-gradient(
-      900px 520px at 90% 0%,
-      rgba(31,41,55,0.08),
-      transparent 55%
-    ),
-    var(--ops-bg);
 }
 
-/* Text selection */
+/* Selection */
 ::selection {
-  background: rgba(15, 118, 110, 0.22);
+  background: var(--ops-accent);
+  color: #ffffff;
 }
 
-/* =========================================================
-   Shared CTA class
-   ========================================================= */
-.ops-cta {
+/* Logo swap helpers */
+html:not(.theme-light) .theme-light-only {
+  display: none;
+}
+
+html.theme-light .theme-dark-only {
+  display: none;
+}
+
+/* =========================
+   GLOBAL: Remove “persistent click outline”
+   Keep keyboard focus via :focus-visible
+   ========================= */
+:focus:not(:focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* =========================
+   CTA base class (used by OpenPlatformLink + CloseAlertButton)
+   ========================= */
+.ops-cta-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 36px; /* h-9 */
-  padding: 0 12px;
-  border-radius: 10px;
-  border: 1px solid var(--ops-cta-border);
-  background: var(--ops-cta-bg);
-  color: var(--ops-cta-text);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-  text-decoration: none !important;
-  white-space: nowrap;
-  user-select: none;
+  border-radius: 0.375rem; /* rounded-md */
+  border: 1px solid var(--ops-cta-primary-border);
+  background: var(--ops-cta-primary-bg);
+  color: var(--ops-cta-primary-text);
+  padding: 0.375rem 0.625rem; /* px-2.5 py-1.5 */
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 600;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+  text-decoration: none;
 }
 
-.ops-cta:hover {
-  background: var(--ops-cta-bg-hover);
+.ops-cta-primary:hover {
+  background: var(--ops-surface);
 }
 
-.ops-cta:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--ops-focus);
+.ops-cta-primary:focus-visible {
+  outline: 2px solid var(--ops-focus);
+  outline-offset: 2px;
 }

@@ -13,49 +13,42 @@ function initialsFrom(email?: string | null, fullName?: string | null) {
   const parts = base.split(/[\s._-]+/).filter(Boolean);
   if (parts.length === 0) return "U";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 export function UserMenu({ email, fullName }: UserMenuProps) {
-  const initials = useMemo(() => initialsFrom(email, fullName), [email, fullName]);
   const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  const initials = useMemo(() => initialsFrom(email, fullName), [email, fullName]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
-      if (!open) return;
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      if (target.closest("[data-user-menu-root]")) return;
-      setOpen(false);
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-user-menu-root]")) setOpen(false);
     }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, []);
 
   return (
     <div className="relative" data-user-menu-root>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label="Account"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--ops-border)] bg-white text-xs font-semibold text-[var(--ops-text)] hover:bg-[var(--ops-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--ops-focus)]"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--ops-border)] bg-[var(--ops-surface)] text-xs font-semibold text-[var(--ops-text)] hover:bg-[var(--ops-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ops-focus)]"
+        aria-label="User menu"
       >
         {initials}
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-xl border border-[var(--ops-border)] bg-white shadow-lg">
-          <div className="px-3 py-2">
-            <div className="text-xs font-semibold text-[var(--ops-text)]">Signed in</div>
-            <div className="mt-0.5 truncate text-xs text-[var(--ops-text-muted)]">{email || ""}</div>
+        <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-xl border border-[var(--ops-border)] bg-[var(--ops-bg)] shadow-lg">
+          <div className="px-4 py-3">
+            <div className="text-sm font-semibold text-[var(--ops-text)]">
+              {fullName || "Signed in"}
+            </div>
+            <div className="mt-0.5 text-xs text-[var(--ops-text-muted)]">
+              {email || ""}
+            </div>
           </div>
 
           <div className="h-px bg-[var(--ops-border)]" />

@@ -14,6 +14,8 @@ export default function CloseAlertButton({ alertId }: { alertId: string }) {
       e.stopPropagation();
     }
 
+    if (loading || done) return;
+
     setLoading(true);
     setErr(null);
 
@@ -24,14 +26,11 @@ export default function CloseAlertButton({ alertId }: { alertId: string }) {
         body: JSON.stringify({ alertId }),
       });
 
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || `HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error("Failed");
 
       setDone(true);
     } catch (e: any) {
-      setErr(e?.message || "Failed");
+      setErr(e?.message || "Error");
     } finally {
       setLoading(false);
     }
@@ -43,13 +42,15 @@ export default function CloseAlertButton({ alertId }: { alertId: string }) {
         type="button"
         onClick={onClose}
         disabled={loading || done}
-        className="ops-cta disabled:opacity-60"
+        className="ops-cta-primary text-xs font-semibold disabled:opacity-60"
         title="Use only if this is not actually an issue. Prefer letting items auto-resolve."
       >
-        {done ? "Noted" : loading ? "Saving…" : "Not an issue"}
+        {done ? "Noted" : loading ? "Saving…" : "Not An Issue"}
       </button>
 
-      {err ? <span className="text-xs text-[var(--ops-sev-critical)]">{err}</span> : null}
+      {err ? (
+        <span className="text-xs text-[var(--ops-sev-critical)]">{err}</span>
+      ) : null}
     </div>
   );
 }

@@ -3,6 +3,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+type DebugKey =
+  | "stripe.missed_expected_payment"
+  | "stripe.payment_amount_drift"
+  | "jira.no_recent_client_activity";
+
+type DebugRow = {
+  key: DebugKey;
+  label: string;
+  type: string;
+  source: string;
+};
+
 type AlertRow = {
   id: string;
   customer_id: string;
@@ -11,15 +23,6 @@ type AlertRow = {
   amount_at_risk: number | null;
   source_system: string | null;
   created_at: string;
-};
-
-type DebugKey = "stripe.missed_expected_payment" | "stripe.payment_amount_drift" | "jira.no_recent_client_activity";
-
-type DebugRow = {
-  key: DebugKey;
-  label: string;
-  type: string; // alert.type
-  source: string;
 };
 
 const SUPPORTED: DebugRow[] = [
@@ -35,82 +38,70 @@ const SUPPORTED: DebugRow[] = [
     type: "payment_amount_drift",
     source: "stripe",
   },
+  {
+    key: "jira.no_recent_client_activity",
+    label: "No recent client activity",
+    type: "no_recent_client_activity",
+    source: "jira",
+  },
 ];
 
 export default function DebugPage() {
-  const enabled = process.env.NEXT_PUBLIC_DEBUG_FIXTURES_ENABLED === "true";
+  const [enabled, setEnabled] = useState(true);
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
-  const [customerId, setCustomerId] = useState<string>("");
+  const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState<string>("");
 
   async function refresh() {
-    setMsg("");
     const res = await fetch("/api/debug/alerts/list", { method: "GET" });
-    const json = await res.json().catch(() => ({}));
-
     if (!res.ok) {
-      setMsg(json?.error ? String(json.error) : "Failed to load alerts");
+      setEnabled(false);
       return;
     }
-
-    setCustomerId(String(json?.customerId || ""));
-    setAlerts((json?.alerts || []) as AlertRow[]);
+    const data = await res.json();
+    setEnabled(true);
+    setCustomerId(data.customerId || null);
+    setAlerts(data.alerts || []);
+    setToggles(data.toggles || {});
   }
 
   useEffect(() => {
-    if (!enabled) return;
-    void refresh();
-  }, [enabled]);
-
-  const byType = useMemo(() => {
-    const map = new Map<string, AlertRow>();
-    for (const a of alerts) {
-      // list endpoint returns latest per type already, but keep safe
-      if (!map.has(a.type)) map.set(a.type, a);
-    }
-    return map;
-  }, [alerts]);
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const rows = useMemo(() => {
-    return SUPPORTED.map((s) => {
-      const existing = byType.get(s.type) || null;
-      const isOpen = existing?.status === "open";
-      return { spec: s, existing, isOpen };
+    return SUPPORTED.map((spec) => {
+      const existing = alerts.find(
+        (a) => a.type === spec.type && a.source_system === spec.source
+      );
+      const isOpen = Boolean(toggles[spec.key]);
+      return { spec, existing, isOpen };
     });
-  }, [byType]);
+  }, [alerts, toggles]);
 
   async function toggleKey(key: DebugKey, enabledToggle: boolean) {
     setBusy((b) => ({ ...b, [key]: true }));
     setMsg("");
 
     try {
-      if (!customerId) {
-        setMsg("Missing customerId (debug list did not return it).");
-        return;
-      }
+      if (!customerId) throw new Error("No customer");
 
       const res = await fetch("/api/debug/toggles", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        // IMPORTANT: alertId is intentionally omitted so you can force-create alerts from zero state
-        body: JSON.stringify({ key, enabled: enabledToggle, targetId: customerId }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, enabled: enabledToggle }),
       });
 
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setMsg(json?.error ? String(json.error) : "Toggle failed");
-        return;
-      }
+      if (!res.ok) throw new Error("Toggle failed");
 
-      setMsg(
-        `OK: ${enabledToggle ? "FORCED" : "RESTORED"} ${key} for customer ${json?.targetId}. Generator: created=${
-          json?.generator?.created ?? "?"
-        }, updated=${json?.generator?.updated ?? "?"}, resolved=${json?.generator?.resolved ?? "?"}`
-      );
-
-      await refresh();
+      const data = await res.json();
+      setToggles((t) => ({ ...t, [key]: enabledToggle }));
+      setAlerts(data.alerts || []);
+      setMsg("Updated.");
     } catch (e: any) {
       setMsg(e?.message || "Toggle failed");
     } finally {
@@ -122,7 +113,9 @@ export default function DebugPage() {
     return (
       <main className="px-0">
         <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
-          <div className="text-sm text-[var(--ops-text-secondary)]">Not found.</div>
+          <div className="text-sm text-[var(--ops-text-secondary)]">
+            Not found.
+          </div>
         </div>
       </main>
     );
@@ -137,7 +130,7 @@ export default function DebugPage() {
       ) : null}
 
       <div className="overflow-hidden rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)]">
-        <div className="grid grid-cols-12 border-b border-[var(--ops-border)] bg-white/60 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
+        <div className="grid grid-cols-12 border-b border-[var(--ops-border)] bg-[var(--ops-surface)] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
           <div className="col-span-4">Alert</div>
           <div className="col-span-3">Type</div>
           <div className="col-span-2">Source</div>
@@ -155,7 +148,9 @@ export default function DebugPage() {
               className="grid grid-cols-12 items-center border-b border-[var(--ops-border)]/60 px-4 py-4 last:border-b-0"
             >
               <div className="col-span-4">
-                <div className="text-sm font-semibold text-[var(--ops-text)]">{spec.label}</div>
+                <div className="text-sm font-semibold text-[var(--ops-text)]">
+                  {spec.label}
+                </div>
                 <div className="mt-1 text-xs text-[var(--ops-text-faint)]">
                   customer {customerId ? `${customerId.slice(0, 8)}…` : "—"}
                 </div>
@@ -164,13 +159,17 @@ export default function DebugPage() {
               <div className="col-span-3">
                 <div className="text-sm text-[var(--ops-text)]">{spec.type}</div>
                 <div className="mt-1 text-xs text-[var(--ops-text-faint)]">
-                  {existing?.amount_at_risk != null ? `amount_at_risk=${existing.amount_at_risk}` : "amount_at_risk=—"}
+                  {existing?.amount_at_risk != null
+                    ? `amount_at_risk=${existing.amount_at_risk}`
+                    : "amount_at_risk=—"}
                 </div>
               </div>
 
               <div className="col-span-2">
                 <div className="text-sm text-[var(--ops-text)]">{spec.source}</div>
-                <div className="mt-1 text-xs text-[var(--ops-text-faint)]">{existing?.status || "—"}</div>
+                <div className="mt-1 text-xs text-[var(--ops-text-faint)]">
+                  {existing?.status ? existing.status : "—"}
+                </div>
               </div>
 
               <div className="col-span-1">
@@ -183,11 +182,14 @@ export default function DebugPage() {
                   disabled={isBusy || !customerId}
                   onClick={() => toggleKey(spec.key, !isOpen)}
                   className={[
-                    "ops-cta",
+                    "inline-flex items-center justify-center rounded-md border px-2 py-1 text-xs font-semibold transition-colors min-w-[56px]",
+                    "focus:outline-none focus:ring-0",
                     isOpen
-                      ? "bg-emerald-600 text-white border-transparent hover:opacity-95"
-                      : "bg-[var(--ops-accent-dark)] text-white border-transparent hover:opacity-95",
-                    isBusy || !customerId ? "opacity-60 cursor-not-allowed" : "",
+                      ? "bg-white text-black border-white"
+                      : "bg-black text-white border-white/30",
+                    isBusy || !customerId
+                      ? "opacity-60 cursor-not-allowed"
+                      : "hover:border-white",
                   ].join(" ")}
                   title={
                     isOpen

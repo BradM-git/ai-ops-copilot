@@ -16,8 +16,8 @@ import {
 export const dynamic = "force-dynamic";
 
 function severityFromScore(score: number): Severity {
-  if (score >= 280) return "critical";
-  if (score >= 200) return "high";
+  if (score >= 90) return "critical";
+  if (score >= 70) return "high";
   return "medium";
 }
 
@@ -50,219 +50,136 @@ function severityRowClasses(severity: Severity): {
 
 function getOpenCta(
   alert: AlertRow,
-  customer: CustomerRow | null
+  _customer: CustomerRow | null
 ): { platform: string; href: string } | null {
   const system = (alert.source_system || "").toLowerCase();
+  if (!system) return null;
 
+  const ctx: any = (alert as any).context;
+  const urlFromContext =
+    typeof ctx?.url === "string"
+      ? ctx.url
+      : typeof ctx?.link === "string"
+      ? ctx.link
+      : null;
+
+  if (system === "notion") {
+    return { platform: "Notion", href: urlFromContext || "https://www.notion.so/" };
+  }
+  if (system === "quickbooks") {
+    return { platform: "QuickBooks", href: urlFromContext || "https://qbo.intuit.com/" };
+  }
   if (system === "stripe") {
-    const entityType = (alert.primary_entity_type || "").toLowerCase();
-    const entityId = alert.primary_entity_id || "";
-
-    if (entityType === "invoice" && entityId) {
-      return {
-        platform: "Stripe",
-        href: `https://dashboard.stripe.com/invoices/${entityId}`,
-      };
-    }
-
-    if (
-      (entityType === "payment_intent" || entityType === "paymentintent") &&
-      entityId
-    ) {
-      return {
-        platform: "Stripe",
-        href: `https://dashboard.stripe.com/payments/${entityId}`,
-      };
-    }
-
-    if (customer?.stripe_customer_id) {
-      return {
-        platform: "Stripe",
-        href: `https://dashboard.stripe.com/customers/${customer.stripe_customer_id}`,
-      };
-    }
-
-    return { platform: "Stripe", href: "https://dashboard.stripe.com" };
+    return { platform: "Stripe", href: urlFromContext || "https://dashboard.stripe.com/" };
   }
-
   if (system === "jira") {
-    const rawBase =
-      process.env.JIRA_BASE_URL || process.env.NEXT_PUBLIC_JIRA_BASE_URL || "";
-    const baseUrl = rawBase ? rawBase.replace(/\/$/, "") : "";
-    if (!baseUrl) return null;
-
-    const peType = (alert.primary_entity_type || "").toLowerCase();
-    const peId = (alert.primary_entity_id || "").toLowerCase();
-
-    if (
-      alert.type === "integration_error" &&
-      peType === "integration" &&
-      peId === "jira"
-    ) {
-      return { platform: "Jira", href: baseUrl };
-    }
-
-    const ctx: any = (alert as any).context || {};
-    const issueKey =
-      ctx.latest_issue_key ||
-      ctx.historical_latest_issue_key ||
-      (typeof ctx.last_issue === "string" ? ctx.last_issue : null);
-
-    if (issueKey && issueKey !== "unknown") {
-      return { platform: "Jira", href: `${baseUrl}/browse/${issueKey}` };
-    }
-
-    const projectKey = ctx.project_key;
-    if (projectKey) {
-      const jql = `project = ${projectKey} ORDER BY updated DESC`;
-      return {
-        platform: "Jira",
-        href: `${baseUrl}/issues/?jql=${encodeURIComponent(jql)}`,
-      };
-    }
-
-    return { platform: "Jira", href: baseUrl };
+    return { platform: "Jira", href: urlFromContext || "https://www.atlassian.com/software/jira" };
   }
 
-  return null;
+  return { platform: system, href: urlFromContext || "https://www.google.com" };
+}
+
+function fmtMoney(cents: number | null) {
+  if (!cents) return null;
+  return (cents / 100).toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
 export default async function HomePage() {
   const supabase = await supabaseServer();
 
-  // 🔒 SINGLE SOURCE OF TRUTH: one user → one customer
-  let customerId: string;
+  let customerId: string | null = null;
   try {
     customerId = await getCurrentCustomerId();
   } catch {
+    // no-op
+  }
+
+  if (!customerId) {
     return (
       <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
         <div className="text-sm font-semibold text-[var(--ops-text)]">
           No attention items.
         </div>
         <div className="mt-2 text-sm text-[var(--ops-text-muted)]">
-          Your user isn&apos;t mapped to a customer yet.
+          Sign in to view your workspace.
         </div>
       </div>
     );
   }
 
-  const { data: alertsRaw, error: alertsErr } = await supabase
-    .from("alerts")
-    .select(
-      "id, customer_id, type, message, amount_at_risk, status, created_at, source_system, primary_entity_type, primary_entity_id, confidence, confidence_reason, expected_amount_cents, observed_amount_cents, expected_at, observed_at, context"
-    )
-    .eq("customer_id", customerId)
-    .eq("status", "open")
-    .order("created_at", { ascending: false })
-    .limit(200); // pull a bit more, then dedupe to 1 per type
-
-  if (alertsErr) {
-    return (
-      <div className="text-sm text-[var(--ops-text-secondary)]">
-        Failed to load alerts: {alertsErr.message}
-      </div>
-    );
-  }
-
-  // ✅ Deterministic: show at most 1 OPEN alert per type (latest by created_at)
-  const alertsAll = ((alertsRaw || []) as unknown) as AlertRow[];
-  const seenTypes = new Set<string>();
-  const alerts: AlertRow[] = [];
-  for (const a of alertsAll) {
-    const t = (a.type || "").toLowerCase();
-    if (!t) continue;
-    if (seenTypes.has(t)) continue;
-    seenTypes.add(t);
-    alerts.push(a);
-  }
-
-  const customerIds = [customerId];
-
   const { data: customersRaw } = await supabase
     .from("customers")
-    .select("id, account_id, stripe_customer_id, name, email, created_at")
-    .in("id", customerIds);
+    .select("*")
+    .eq("id", customerId);
 
-  const customers = ((customersRaw || []) as unknown) as CustomerRow[];
-  const customersById = new Map(customers.map((c) => [c.id, c]));
+  const customer = ((customersRaw || [])[0] || null) as CustomerRow | null;
 
-  const { data: expectedRaw } = await supabase
+  const { data: expectedRevenueRaw } = await supabase
     .from("expected_revenue")
-    .select(
-      "id, customer_id, cadence_days, expected_amount, last_paid_at, confidence, created_at"
-    )
-    .in("customer_id", customerIds);
+    .select("*")
+    .eq("customer_id", customerId);
 
-  const expectedRows =
-    ((expectedRaw || []) as unknown) as ExpectedRevenueRow[];
-  const expectedByCustomer = new Map(
-    expectedRows.map((e) => [e.customer_id, e])
-  );
+  const expectedRevenue = (expectedRevenueRaw || []) as ExpectedRevenueRow[];
+  const expected = expectedRevenue[0] || null;
 
   const { data: invoicesRaw } = await supabase
     .from("invoices")
-    .select(
-      "id, customer_id, stripe_invoice_id, amount_due, status, invoice_date, paid_at, created_at"
-    )
-    .in("customer_id", customerIds)
-    .order("invoice_date", { ascending: false });
+    .select("*")
+    .eq("customer_id", customerId)
+    .order("created_at", { ascending: false });
 
-  const invoices = ((invoicesRaw || []) as unknown) as InvoiceRow[];
-  const latestInvoiceByCustomer = new Map<string, InvoiceRow>();
-  for (const inv of invoices) {
-    if (!latestInvoiceByCustomer.has(inv.customer_id)) {
-      latestInvoiceByCustomer.set(inv.customer_id, inv);
-    }
-  }
+  const invoices = (invoicesRaw || []) as InvoiceRow[];
+  const latestInvoice = invoices[0] || null;
 
   const { data: paymentsRaw } = await supabase
     .from("payments")
-    .select(
-      "id, customer_id, stripe_payment_intent_id, amount, paid_at, created_at"
-    )
-    .in("customer_id", customerIds)
-    .order("paid_at", { ascending: false });
+    .select("*")
+    .eq("customer_id", customerId)
+    .order("created_at", { ascending: false });
 
-  const payments = ((paymentsRaw || []) as unknown) as PaymentRow[];
-  const latestPaymentByCustomer = new Map<string, PaymentRow>();
-  for (const p of payments) {
-    if (!latestPaymentByCustomer.has(p.customer_id)) {
-      latestPaymentByCustomer.set(p.customer_id, p);
-    }
-  }
+  const payments = (paymentsRaw || []) as PaymentRow[];
+  const latestPayment = payments[0] || null;
 
-  const presented = alerts.map((a) => {
-    const cust = customersById.get(a.customer_id) || null;
-    const exp = expectedByCustomer.get(a.customer_id) || null;
-    const inv = latestInvoiceByCustomer.get(a.customer_id) || null;
-    const pay = latestPaymentByCustomer.get(a.customer_id) || null;
+  const { data: alertsRaw } = await supabase
+    .from("alerts")
+    .select("*")
+    .eq("customer_id", customerId)
+    .order("created_at", { ascending: false });
 
-    const pres = presentAlert({
-      alert: a,
-      customer: cust,
-      expected: exp,
-      latestInvoice: inv,
-      latestPayment: pay,
-      overdueDays: null,
-      severity: "medium",
-    });
+  const alerts = (alertsRaw || []) as AlertRow[];
+  const openAlerts = alerts.filter((a) => a.status === "open");
 
-    const sev = severityFromScore(pres.score);
-    const final = presentAlert({
-      alert: a,
-      customer: cust,
-      expected: exp,
-      latestInvoice: inv,
-      latestPayment: pay,
-      overdueDays: null,
-      severity: sev,
-    });
+  const presented = openAlerts
+    .map((a) => {
+      const pres0 = presentAlert({
+        alert: a,
+        customer,
+        expected,
+        latestInvoice,
+        latestPayment,
+        overdueDays: null,
+        severity: "medium",
+      });
 
-    return { alert: a, customer: cust, presentation: final, severity: sev };
-  });
+      const sev = severityFromScore(pres0.score);
 
-  presented.sort((x, y) => y.presentation.score - x.presentation.score);
+      const final = presentAlert({
+        alert: a,
+        customer,
+        expected,
+        latestInvoice,
+        latestPayment,
+        overdueDays: null,
+        severity: sev,
+      });
+
+      return { alert: a, customer, presentation: final, severity: sev };
+    })
+    .sort((x, y) => y.presentation.score - x.presentation.score);
 
   return (
     <div>
@@ -285,17 +202,16 @@ export default async function HomePage() {
                 : severity === "high"
                 ? "High"
                 : "Medium";
-            const customerLabel =
-              customer?.name || customer?.email || "Customer";
+
+            const customerLabel = customer?.name || customer?.email || "Customer";
             const cta = getOpenCta(alert, customer);
+            const money = fmtMoney(alert.amount_at_risk);
 
             return (
               <details
                 key={alert.id}
                 className={`group overflow-hidden rounded-l-xl ${sevCls.rail} ${
-                  idx === 0
-                    ? ""
-                    : "border-t border-t-[var(--ops-border)]"
+                  idx === 0 ? "" : "border-t border-t-[var(--ops-border)]"
                 }`}
               >
                 <summary className="list-none cursor-pointer">
@@ -305,17 +221,24 @@ export default async function HomePage() {
                         <div className="truncate text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
                           {presentation.domainLabel} · {customerLabel}
                         </div>
+
                         <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${sevCls.badge} ${sevCls.badgeText}`}
+                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${sevCls.badge} ${sevCls.badgeText}`}
                         >
                           {sevLabel}
                         </span>
+
+                        {money ? (
+                          <span className="text-xs text-[var(--ops-text-muted)]">
+                            {money} at risk
+                          </span>
+                        ) : null}
                       </div>
 
                       <div className="mt-1 truncate text-sm font-semibold text-[var(--ops-text)]">
                         {presentation.title}
                       </div>
-                      <div className="mt-0.5 truncate text-sm text-[var(--ops-text-secondary)]">
+                      <div className="mt-0.5 truncate text-sm text-[var(--ops-text-muted)]">
                         {presentation.summary}
                       </div>
                     </div>
@@ -332,13 +255,9 @@ export default async function HomePage() {
                   </div>
                 </summary>
 
-                <div className="px-4 pb-4 pt-2">
-                  <div className="text-xs text-[var(--ops-text-faint)]">
-                    {presentation.confidenceLabel}
-                  </div>
-
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    <div className="rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-3">
+                <div className="border-t border-t-[var(--ops-border)] bg-[var(--ops-surface)] px-4 py-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
                         Expectation
                       </div>
@@ -347,7 +266,7 @@ export default async function HomePage() {
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-3">
+                    <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
                         Observation
                       </div>
@@ -355,18 +274,18 @@ export default async function HomePage() {
                         {presentation.observation}
                       </div>
                     </div>
+                  </div>
 
-                    <div className="rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-                        Drift
-                      </div>
-                      <div className="mt-2 text-sm text-[var(--ops-text)]">
-                        {presentation.drift}
-                      </div>
+                  <div className="mt-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
+                      Drift
+                    </div>
+                    <div className="mt-2 text-sm text-[var(--ops-text)]">
+                      {presentation.drift}
                     </div>
                   </div>
 
-                  <div className="mt-2 rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-3">
+                  <div className="mt-4">
                     <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
                       Next step
                     </div>

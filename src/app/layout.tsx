@@ -1,14 +1,16 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import "./globals.css";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { UserMenu } from "@/components/UserMenu";
 import SideNav from "@/components/SideNav";
+import ThemeToggle from "@/components/ThemeToggle";
 
 export const metadata: Metadata = {
-  title: "AI Ops Copilot",
-  description: "AI Ops Copilot",
+  title: "Amargosa",
+  description: "Amargosa",
 };
 
 function IconLink({
@@ -25,7 +27,7 @@ function IconLink({
       href={href}
       aria-label={label}
       title={label}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--ops-border)] bg-white text-[var(--ops-icon)] hover:bg-[var(--ops-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--ops-focus)]"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent text-[var(--ops-text-muted)] hover:bg-[var(--ops-hover)] focus:outline-none focus:ring-0"
     >
       {children}
     </Link>
@@ -34,15 +36,43 @@ function IconLink({
 
 function CogIcon() {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
-      <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.2 2.2 0 0 1-1.55 3.75 2.2 2.2 0 0 1-1.56-.65l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.08 1.64V21a2.2 2.2 0 0 1-4.4 0v-.05a1.8 1.8 0 0 0-1.08-1.64 1.8 1.8 0 0 0-1.98.36l-.04.04a2.2 2.2 0 0 1-3.11 0 2.2 2.2 0 0 1 0-3.11l.04-.04A1.8 1.8 0 0 0 4.6 15a1.8 1.8 0 0 0-1.64-1.08H2.9a2.2 2.2 0 0 1 0-4.4h.05A1.8 1.8 0 0 0 4.6 8.4a1.8 1.8 0 0 0-.36-1.98l-.04-.04a2.2 2.2 0 1 1 3.11-3.11l.04.04A1.8 1.8 0 0 0 9.33 3.6a1.8 1.8 0 0 0 1.08-1.64V1.9a2.2 2.2 0 0 1 4.4 0v.05a1.8 1.8 0 0 0 1.08 1.64 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.2 2.2 0 0 1 3.11 3.11l-.04.04A1.8 1.8 0 0 0 19.4 8.4a1.8 1.8 0 0 0 1.64 1.08H21.1a2.2 2.2 0 0 1 0 4.4h-.05A1.8 1.8 0 0 0 19.4 15z" />
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none">
+      <path
+        d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M19.4 13a7.7 7.7 0 0 0 0-2l2-1.6-2-3.5-2.4 1a7.3 7.3 0 0 0-1.7-1L14.9 2h-3.8l-.4 2.9a7.3 7.3 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.6a7.7 7.7 0 0 0 0 2l-2 1.6 2 3.5 2.4-1a7.3 7.3 0 0 0 1.7 1l.4 2.9h3.8l.4-2.9a7.3 7.3 0 0 0 1.7-1l2.4 1 2-3.5-2-1.6Z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function BugIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none">
+      <path
+        d="M10 6a2 2 0 1 1 4 0"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8 10h8v5a4 4 0 0 1-8 0v-5Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 13H4m16 0h-2M7 8 5.5 6.5M17 8l1.5-1.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -53,31 +83,56 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const supabase = await supabaseServer();
-  const { data } = await supabase.auth.getUser();
-  const user = data.user;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   return (
     <html lang="en">
       <body className="flex min-h-screen flex-col bg-[var(--ops-bg)] text-[var(--ops-text)]">
-        <header className="sticky top-0 z-50 border-b border-[var(--ops-border)] bg-[rgba(31,41,55,0.06)] backdrop-blur">
+        <header className="sticky top-0 z-50 border-b border-[var(--ops-border)] bg-[var(--ops-footer-bg)] backdrop-blur">
           <div className="h-[3px] w-full bg-[var(--ops-brand-line)]" />
 
           <div className="flex h-16 w-full items-center justify-between px-4 sm:px-6">
             <Link
               href="/"
-              className="flex items-center rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--ops-focus)]"
+              className="flex items-center gap-2 rounded-lg focus:outline-none focus:ring-0"
               title="Home"
             >
-              <span className="sr-only">Home</span>
+              {/* Dark mode logo */}
+              <Image
+                src="/brand/amargosa-mark_orange-on-dark_512.svg"
+                alt="Amargosa"
+                width={28}
+                height={28}
+                className="theme-dark-only"
+                priority
+              />
+
+              {/* Light mode logo (UPDATED) */}
+              <Image
+                src="/brand/amargosa-mark_orange_transparent_512.svg"
+                alt="Amargosa"
+                width={28}
+                height={28}
+                className="theme-light-only"
+                priority
+              />
+
+              <span className="text-sm font-semibold tracking-wide text-[var(--ops-text)]"></span>
             </Link>
 
             <div className="flex items-center gap-2">
+              <ThemeToggle />
+
               {user ? (
                 <>
                   <IconLink href="/settings" label="Settings">
                     <CogIcon />
                   </IconLink>
-
+                  <IconLink href="/debug" label="Debug">
+                    <BugIcon />
+                  </IconLink>
                   <UserMenu
                     email={user.email}
                     fullName={
@@ -110,7 +165,7 @@ export default async function RootLayout({
           style={{ background: "var(--ops-footer-bg)" }}
         >
           <div className="flex w-full items-center justify-between px-4 py-4 text-sm sm:px-6">
-            <div className="text-[var(--ops-text-muted)]">© 2026</div>
+            <div className="text-[var(--ops-text-muted)]">Amargosa © 2026</div>
             <div />
           </div>
         </footer>
