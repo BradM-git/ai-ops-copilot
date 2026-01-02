@@ -15,7 +15,7 @@ export async function GET(req: Request) {
       "/api/logic/alerts/notion-stale",
       "/api/logic/alerts/suppress-inactive",
       "/api/logic/expected-revenue",
-      "/api/alerts/amount-drift",
+      "/api/logic/alerts/amount-drift",
     ];
 
     const results = await Promise.all(
