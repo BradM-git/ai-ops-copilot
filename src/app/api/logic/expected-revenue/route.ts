@@ -1,69 +1,31 @@
-// src/app/api/logic/expected-revenue/route.ts
+import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { HttpError, jsonErr, jsonOk, requireEnv } from "@/lib/api";
+import { requireCron } from "@/lib/api";
 
-export const runtime = "nodejs";
-
-function getSupabase() {
-  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  return createClient(url, key);
+function supabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(url, serviceKey, { auth: { persistSession: false } });
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const supabase = getSupabase();
+    requireCron(req);
 
-    const { data: invoices, error: invErr } = await supabase
-      .from("invoices")
-      .select("customer_id, amount_due, paid_at")
-      .not("paid_at", "is", null)
-      .order("paid_at", { ascending: false })
-      .limit(5000);
+    const supabase = supabaseAdmin();
 
-    if (invErr) {
-      throw new HttpError(500, "Supabase read invoices failed", {
-        code: "SUPABASE_READ_INVOICES_FAILED",
-        details: invErr,
-      });
-    }
+    // Placeholder logic: compute expected revenue from invoices/customers
+    const { data, error } = await supabase
+      .from("stripe_invoices")
+      .select("amount_due_cents,status");
 
-    if (!invoices || invoices.length === 0) {
-      return jsonOk({ expected_created: 0, message: "no paid invoices" });
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const seen = new Set<string>();
-    let created = 0;
+    const open = (data || []).filter((i) => i.status === "open");
+    const total = open.reduce((sum, i) => sum + (i.amount_due_cents ?? 0), 0);
 
-    for (const inv of invoices as any[]) {
-      if (!inv.customer_id) continue;
-      if (seen.has(inv.customer_id)) continue;
-      seen.add(inv.customer_id);
-
-      const row = {
-        customer_id: inv.customer_id,
-        cadence_days: 30, // MVP assumption
-        expected_amount: inv.amount_due ?? null,
-        last_paid_at: inv.paid_at ?? null,
-        confidence: 0.9,
-      };
-
-      const { error } = await supabase.from("expected_revenue").upsert(row, {
-        onConflict: "customer_id",
-      });
-
-      if (error) {
-        throw new HttpError(500, "Supabase upsert expected_revenue failed", {
-          code: "SUPABASE_UPSERT_EXPECTED_REVENUE_FAILED",
-          details: { error, row },
-        });
-      }
-
-      created++;
-    }
-
-    return jsonOk({ expected_created: created });
-  } catch (err) {
-    return jsonErr(err);
+    return NextResponse.json({ ok: true, expected_revenue_cents: total, open_count: open.length });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "error" }, { status: 500 });
   }
 }

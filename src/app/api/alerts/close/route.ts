@@ -1,12 +1,7 @@
 // src/app/api/alerts/close/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-function supabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createClient(url, serviceKey, { auth: { persistSession: false } });
-}
+import { supabaseServer } from "@/lib/supabaseServer";
+import { getCurrentCustomerId } from "@/lib/currentCustomer";
 
 export async function POST(req: Request) {
   try {
@@ -17,17 +12,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing alertId" }, { status: 400 });
     }
 
-    const admin = supabaseAdmin();
+    const supabase = await supabaseServer();
 
-    // Keep this minimal: "closed" remains the escape hatch.
-    // We do NOT add schema / meaning beyond status here.
-    const { data, error } = await admin
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    if (userErr) return NextResponse.json({ error: userErr.message }, { status: 401 });
+    if (!userRes.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    let customerId: string;
+    try {
+      customerId = await getCurrentCustomerId();
+    } catch {
+      return NextResponse.json({ error: "No customer membership" }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
       .from("alerts")
-      .update({
-        status: "closed",
-        // optional: leave context as-is; do not mutate
-      })
+      .update({ status: "closed" })
       .eq("id", alertId)
+      .eq("customer_id", customerId)
       .select("id, status")
       .maybeSingle();
 

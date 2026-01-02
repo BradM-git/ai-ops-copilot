@@ -1,97 +1,42 @@
+import { NextResponse } from "next/server";
+import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
-import { HttpError, jsonErr, jsonOk, requireEnv } from "@/lib/api";
-import { getStripe, listAllInvoices } from "@/integrations/stripe";
+import { requireCron } from "@/lib/api";
 
-export const runtime = "nodejs";
-
-function getSupabase() {
-  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  return createClient(url, key);
+function supabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(url, serviceKey, { auth: { persistSession: false } });
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const stripe = getStripe();
-    const supabase = getSupabase();
+    requireCron(req);
 
-    const { data: dbCustomers, error: cErr } = await supabase
-      .from("customers")
-      .select("id,stripe_customer_id");
+    const stripeKey = process.env.STRIPE_SECRET_KEY!;
+    const stripe = new Stripe(stripeKey); // <-- remove apiVersion to match installed typings
 
-    if (cErr) {
-      throw new HttpError(500, "Supabase read customers failed", {
-        code: "SUPABASE_READ_CUSTOMERS_FAILED",
-        details: cErr,
-      });
-    }
+    const invoices = await stripe.invoices.list({ limit: 100 });
 
-    const map = new Map<string, string>();
-    for (const c of dbCustomers ?? []) {
-      map.set((c as any).stripe_customer_id, (c as any).id);
-    }
+    const supabase = supabaseAdmin();
 
-    let invoices: any[];
-    try {
-      invoices = await listAllInvoices(stripe);
-    } catch (e) {
-      throw new HttpError(502, "Stripe invoices.list failed", {
-        code: "STRIPE_LIST_INVOICES_FAILED",
-        details: e,
-      });
-    }
-
-    let upserted = 0;
-    let skippedNoCustomer = 0;
-    let skippedUnmappedCustomer = 0;
-
-    for (const inv of invoices) {
-      const stripeCustomerId =
-        typeof inv.customer === "string" ? inv.customer : (inv.customer as any)?.id;
-
-      if (!stripeCustomerId) {
-        skippedNoCustomer++;
-        continue;
-      }
-
-      const customer_id = map.get(stripeCustomerId);
-      if (!customer_id) {
-        skippedUnmappedCustomer++;
-        continue;
-      }
-
+    // Persist minimal invoice fields
+    for (const inv of invoices.data) {
       const row = {
-        stripe_invoice_id: inv.id,
-        customer_id,
-        amount_due: inv.amount_due ?? null,
+        id: inv.id,
+        customer_id: typeof inv.customer === "string" ? inv.customer : inv.customer?.id ?? null,
         status: inv.status ?? null,
-        invoice_date: inv.created ? new Date(inv.created * 1000).toISOString() : null,
-        paid_at: inv.status_transitions?.paid_at
-          ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
-          : null,
+        amount_due_cents: inv.amount_due ?? 0,
+        amount_paid_cents: inv.amount_paid ?? 0,
+        due_date: inv.due_date ? new Date(inv.due_date * 1000).toISOString() : null,
       };
 
-      const { error } = await supabase.from("invoices").upsert(row, {
-        onConflict: "stripe_invoice_id",
-      });
-
-      if (error) {
-        throw new HttpError(500, "Supabase upsert invoices failed", {
-          code: "SUPABASE_UPSERT_INVOICES_FAILED",
-          details: { error, row },
-        });
-      }
-
-      upserted++;
+      const { error } = await supabase.from("stripe_invoices").upsert(row, { onConflict: "id" });
+      if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
-    return jsonOk({
-      synced: upserted,
-      fetched: invoices.length,
-      skippedNoCustomer,
-      skippedUnmappedCustomer,
-    });
-  } catch (err) {
-    return jsonErr(err);
+    return NextResponse.json({ ok: true, count: invoices.data.length });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "error" }, { status: 500 });
   }
 }

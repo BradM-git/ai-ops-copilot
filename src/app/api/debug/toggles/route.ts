@@ -20,6 +20,17 @@ function isoDaysAgo(days: number) {
   return d.toISOString();
 }
 
+async function readResponseBody(res: Response) {
+  // Try JSON first; fall back to text so we never lose the real error
+  try {
+    const j = await res.json();
+    return { kind: "json" as const, body: j };
+  } catch {
+    const t = await res.text().catch(() => "");
+    return { kind: "text" as const, body: t };
+  }
+}
+
 // Toggle key names are stable, source-agnostic identifiers.
 // In the debug UI we’ll compute key from alert.type.
 type ToggleKey =
@@ -115,6 +126,8 @@ export async function POST(req: Request) {
     }
 
     const SNAPSHOT_KEY = `${key}:${customerId}`;
+    const baseUrl = new URL(req.url);
+    const genUrl = new URL("/api/logic/alerts/missed", baseUrl.origin);
 
     if (enabled) {
       // Create drift: set last_paid_at far enough back to be overdue
@@ -147,13 +160,19 @@ export async function POST(req: Request) {
 
       if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 });
 
-      // Run real generator
-      const baseUrl = new URL(req.url);
-      const genUrl = new URL("/api/logic/alerts/missed", baseUrl.origin);
+      // ✅ Run real generator (GET — the generator route is GET-only)
+      const genRes = await fetch(genUrl.toString(), { method: "GET" });
+      const parsed = await readResponseBody(genRes);
 
-      const genRes = await fetch(genUrl.toString(), { method: "POST" });
-      const genJson = await genRes.json().catch(() => ({}));
-      if (!genRes.ok) return NextResponse.json({ error: "Generator failed", details: genJson }, { status: 500 });
+      if (!genRes.ok) {
+        return NextResponse.json(
+          {
+            error: "Generator failed",
+            details: { status: genRes.status, response: parsed },
+          },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json({
         ok: true,
@@ -161,7 +180,7 @@ export async function POST(req: Request) {
         enabled: true,
         targetId: customerId,
         mutated: { expected_revenue: { last_paid_at: forcedLastPaid } },
-        generator: genJson,
+        generator: parsed.kind === "json" ? parsed.body : { text: parsed.body },
       });
     }
 
@@ -190,12 +209,19 @@ export async function POST(req: Request) {
       if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
     }
 
-    const baseUrl = new URL(req.url);
-    const genUrl = new URL("/api/logic/alerts/missed", baseUrl.origin);
+    // ✅ Run real generator (GET — the generator route is GET-only)
+    const genRes = await fetch(genUrl.toString(), { method: "GET" });
+    const parsed = await readResponseBody(genRes);
 
-    const genRes = await fetch(genUrl.toString(), { method: "POST" });
-    const genJson = await genRes.json().catch(() => ({}));
-    if (!genRes.ok) return NextResponse.json({ error: "Generator failed", details: genJson }, { status: 500 });
+    if (!genRes.ok) {
+      return NextResponse.json(
+        {
+          error: "Generator failed",
+          details: { status: genRes.status, response: parsed },
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
@@ -203,7 +229,7 @@ export async function POST(req: Request) {
       enabled: false,
       targetId: customerId,
       restored: { expected_revenue: { last_paid_at: restoreLastPaid } },
-      generator: genJson,
+      generator: parsed.kind === "json" ? parsed.body : { text: parsed.body },
     });
   }
 
@@ -237,7 +263,10 @@ export async function POST(req: Request) {
     const baselineAmounts = paid.slice(1).map((p) => p.amount);
     baselineAmounts.sort((a, b) => a - b);
     const mid = Math.floor(baselineAmounts.length / 2);
-    const baseline = baselineAmounts.length % 2 === 0 ? Math.round((baselineAmounts[mid - 1] + baselineAmounts[mid]) / 2) : baselineAmounts[mid];
+    const baseline =
+      baselineAmounts.length % 2 === 0
+        ? Math.round((baselineAmounts[mid - 1] + baselineAmounts[mid]) / 2)
+        : baselineAmounts[mid];
 
     if (!baseline || baseline <= 0) {
       return NextResponse.json({ error: "Baseline could not be computed for this customer." }, { status: 400 });
@@ -274,8 +303,17 @@ export async function POST(req: Request) {
       const genUrl = new URL("/api/alerts/amount-drift", baseUrl.origin);
 
       const genRes = await fetch(genUrl.toString(), { method: "POST" });
-      const genJson = await genRes.json().catch(() => ({}));
-      if (!genRes.ok) return NextResponse.json({ error: "Generator failed", details: genJson }, { status: 500 });
+      const parsed = await readResponseBody(genRes);
+
+      if (!genRes.ok) {
+        return NextResponse.json(
+          {
+            error: "Generator failed",
+            details: { status: genRes.status, response: parsed },
+          },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json({
         ok: true,
@@ -283,7 +321,7 @@ export async function POST(req: Request) {
         enabled: true,
         targetId: customerId,
         mutated: { payments: { id: latest.id, amount: forcedAmount } },
-        generator: genJson,
+        generator: parsed.kind === "json" ? parsed.body : { text: parsed.body },
       });
     }
 
@@ -310,8 +348,17 @@ export async function POST(req: Request) {
     const genUrl = new URL("/api/alerts/amount-drift", baseUrl.origin);
 
     const genRes = await fetch(genUrl.toString(), { method: "POST" });
-    const genJson = await genRes.json().catch(() => ({}));
-    if (!genRes.ok) return NextResponse.json({ error: "Generator failed", details: genJson }, { status: 500 });
+    const parsed = await readResponseBody(genRes);
+
+    if (!genRes.ok) {
+      return NextResponse.json(
+        {
+          error: "Generator failed",
+          details: { status: genRes.status, response: parsed },
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
@@ -319,95 +366,13 @@ export async function POST(req: Request) {
       enabled: false,
       targetId: customerId,
       restored: { payments: { id: restoreId, amount: restoreAmount } },
-      generator: genJson,
+      generator: parsed.kind === "json" ? parsed.body : { text: parsed.body },
     });
   }
 
-  // -------------------------
-  // Handler: jira.no_recent_client_activity
-  // Real upstream control: NONE (external system). Debug control: run generator with lookback override.
-  // -------------------------
+  // Jira toggle left intact but you removed it from UI; keep for later
   if (key === "jira.no_recent_client_activity") {
-    const customerId = resolvedTargetId;
-    const SNAPSHOT_KEY = `${key}:${customerId}`;
-
-    const baseUrl = new URL(req.url);
-    const genUrl = new URL("/api/logic/alerts/no-client-activity", baseUrl.origin);
-
-    if (enabled) {
-      const forcedLookback = "1m";
-
-      const { data: snapExisting, error: snapReadErr } = await admin
-        .from("debug_mutations")
-        .select("id")
-        .eq("key", SNAPSHOT_KEY)
-        .maybeSingle();
-
-      if (snapReadErr) return NextResponse.json({ error: snapReadErr.message }, { status: 500 });
-
-      if (!snapExisting) {
-        const { error: snapErr } = await admin.from("debug_mutations").insert({
-          key: SNAPSHOT_KEY,
-          table_name: "alerts", // no real upstream table; this is just a debug snapshot
-          row_id: customerId,
-          original: { lookback: process.env.JIRA_ACTIVITY_LOOKBACK ?? "7d" },
-          mutated: { lookback: forcedLookback },
-        });
-        if (snapErr) return NextResponse.json({ error: snapErr.message }, { status: 500 });
-      }
-
-      const genRes = await fetch(genUrl.toString(), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ lookback: forcedLookback }),
-      });
-
-      const genJson = await genRes.json().catch(() => ({}));
-      if (!genRes.ok) return NextResponse.json({ error: "Generator failed", details: genJson }, { status: 500 });
-
-      return NextResponse.json({
-        ok: true,
-        key,
-        enabled: true,
-        targetId: customerId,
-        mutated: { lookback: forcedLookback },
-        generator: genJson,
-      });
-    }
-
-    // Disable: restore to normal lookback (from snapshot if present, else 7d)
-    const { data: snap, error: snapErr } = await admin
-      .from("debug_mutations")
-      .select("id, original")
-      .eq("key", SNAPSHOT_KEY)
-      .maybeSingle();
-
-    if (snapErr) return NextResponse.json({ error: snapErr.message }, { status: 500 });
-
-    const restoreLookback = (snap?.original as any)?.lookback ?? (process.env.JIRA_ACTIVITY_LOOKBACK ?? "7d");
-
-    if (snap?.id) {
-      const { error: delErr } = await admin.from("debug_mutations").delete().eq("id", snap.id);
-      if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
-    }
-
-    const genRes = await fetch(genUrl.toString(), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ lookback: restoreLookback }),
-    });
-
-    const genJson = await genRes.json().catch(() => ({}));
-    if (!genRes.ok) return NextResponse.json({ error: "Generator failed", details: genJson }, { status: 500 });
-
-    return NextResponse.json({
-      ok: true,
-      key,
-      enabled: false,
-      targetId: customerId,
-      restored: { lookback: restoreLookback },
-      generator: genJson,
-    });
+    return NextResponse.json({ error: "Not enabled for alpha" }, { status: 400 });
   }
 
   return NextResponse.json({ error: `Unknown toggle key: ${key}` }, { status: 400 });

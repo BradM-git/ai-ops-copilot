@@ -26,6 +26,23 @@ export function requireEnv(name: string): string {
   return v;
 }
 
+export function cronAuthorized(req: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return true; // do not break existing cron config
+
+  const header = req.headers.get("x-cron-secret");
+  const auth = req.headers.get("authorization");
+  const bearer = auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length) : null;
+
+  return header === secret || bearer === secret;
+}
+
+export function requireCron(req: Request) {
+  if (!cronAuthorized(req)) {
+    throw new HttpError(401, "Unauthorized cron request", { code: "CRON_UNAUTHORIZED" });
+  }
+}
+
 export function jsonOk<T>(data: T, init?: ResponseInit) {
   return NextResponse.json<ApiOk<T>>({ ok: true, data }, { status: 200, ...init });
 }
@@ -41,11 +58,7 @@ export function jsonErr(err: unknown) {
   return NextResponse.json<ApiErr>(
     {
       ok: false,
-      error: {
-        message: e.message,
-        code: e.code,
-        details: process.env.NODE_ENV === "development" ? e.details : undefined,
-      },
+      error: { message: e.message, code: e.code, details: e.details },
     },
     { status: e.status }
   );

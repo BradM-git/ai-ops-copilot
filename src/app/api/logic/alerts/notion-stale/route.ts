@@ -23,48 +23,47 @@ export async function GET(req: Request) {
     const activeCustomers = (customers || []).filter((c) => c.is_active !== false);
 
     for (const c of activeCustomers) {
-      const lookbackDays = 14;
+      // Notion items older than 14 days (example heuristic)
+      const staleDays = 14;
 
-      const { data: jira, error: jiraErr } = await supabase
-        .from("jira_activity")
-        .select("id,customer_id,created_at")
-        .eq("customer_id", c.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
+      const { data: rows, error: rowsErr } = await supabase
+        .from("notion_pages")
+        .select("id,customer_id,title,last_edited_time,url")
+        .eq("customer_id", c.id);
 
-      if (jiraErr) return NextResponse.json({ error: jiraErr.message }, { status: 500 });
+      if (rowsErr) return NextResponse.json({ error: rowsErr.message }, { status: 500 });
 
-      const last = jira?.[0]?.created_at ? new Date(jira[0].created_at) : null;
       const now = new Date();
+      const stale = (rows || []).filter((r) => {
+        const t = r.last_edited_time ? new Date(r.last_edited_time) : null;
+        if (!t) return true;
+        const ageDays = Math.floor((now.getTime() - t.getTime()) / (1000 * 60 * 60 * 24));
+        return ageDays >= staleDays;
+      });
 
-      const daysSince = last ? Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24)) : null;
-      const isIssue = daysSince === null || daysSince >= lookbackDays;
+      const title = "Stale Notion items";
+      const description =
+        stale.length === 0
+          ? "No stale Notion items detected."
+          : `${stale.length} Notion item(s) appear stale (not edited in ${staleDays}+ days).`;
 
-      const title = "No recent client activity";
-      const description = isIssue
-        ? last
-          ? `No Jira activity in the last ${lookbackDays} days. Last activity was ${daysSince} days ago.`
-          : `No Jira activity found.`
-        : `Recent activity detected. Last activity was ${daysSince} days ago.`;
-
-      const actions = last
-        ? [
-            {
-              label: "Open Jira",
-              url: "https://jira.atlassian.com/",
-            },
-          ]
-        : [];
+      const actions =
+        stale.length === 0
+          ? []
+          : stale.slice(0, 10).map((r) => ({
+              label: r.title ? `Open: ${r.title}` : `Open item ${String(r.id).slice(0, 6)}…`,
+              url: r.url || "https://www.notion.so/",
+            }));
 
       const payload = {
         customer_id: c.id,
-        type: "no_client_activity",
-        provider: "jira",
+        type: "notion_stale",
+        provider: "notion",
         title,
         description,
-        status: isIssue ? "issue" : "ok",
-        severity: isIssue ? "medium" : "info",
-        count: isIssue ? 1 : 0,
+        status: stale.length === 0 ? "ok" : "issue",
+        severity: stale.length === 0 ? "info" : "low",
+        count: stale.length,
         actions,
         last_run_at: new Date().toISOString(),
       };
@@ -73,7 +72,7 @@ export async function GET(req: Request) {
         .from("alerts")
         .select("id")
         .eq("customer_id", c.id)
-        .eq("type", "no_client_activity")
+        .eq("type", "notion_stale")
         .maybeSingle();
 
       if (existErr) return NextResponse.json({ error: existErr.message }, { status: 500 });
