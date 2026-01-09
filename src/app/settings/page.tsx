@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { SettingsClientList } from "./SettingsClientList";
+import { getCurrentCustomerId } from "@/lib/currentCustomer";
 
 export const dynamic = "force-dynamic";
 
@@ -39,8 +40,14 @@ async function upsertCustomerSettings(formData: FormData) {
 
   if (!isSettingsEnabled()) notFound();
 
-  const customerId = String(formData.get("customer_id") || "");
-  if (!customerId) return;
+  // ✅ Never trust customer_id from the browser. Always scope to the logged-in customer.
+  let customerId: string | null = null;
+  try {
+    customerId = await getCurrentCustomerId();
+  } catch {
+    customerId = null;
+  }
+  if (!customerId) notFound();
 
   const supabase = supabaseAdmin();
 
@@ -64,20 +71,31 @@ async function upsertCustomerSettings(formData: FormData) {
 export default async function SettingsPage() {
   if (!isSettingsEnabled()) notFound();
 
+  let customerId: string | null = null;
+  try {
+    customerId = await getCurrentCustomerId();
+  } catch {
+    customerId = null;
+  }
+  if (!customerId) notFound();
+
   const supabase = supabaseAdmin();
 
+  // ✅ Only load the logged-in customer
   const { data: customersRaw } = await supabase
     .from("customers")
     .select("id,name,email,created_at")
-    .order("created_at", { ascending: false });
+    .eq("id", customerId);
 
   const customers = (customersRaw || []) as Customer[];
 
+  // ✅ Only load settings for the logged-in customer
   const { data: settingsRaw } = await supabase
     .from("customer_settings")
     .select(
       "customer_id,missed_payment_grace_days,missed_payment_low_conf_cutoff,missed_payment_low_conf_min_risk_cents,amount_drift_threshold_pct,jira_activity_lookback,updated_at"
-    );
+    )
+    .eq("customer_id", customerId);
 
   const settings = (settingsRaw || []) as CustomerSettings[];
 
@@ -92,7 +110,7 @@ export default async function SettingsPage() {
             color: "var(--ops-muted)",
           }}
         >
-          No customers found.
+          No customer found for this account.
         </div>
       ) : (
         <SettingsClientList

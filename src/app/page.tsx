@@ -3,6 +3,7 @@ import { supabaseServer } from "@/lib/supabaseServer";
 import { getCurrentCustomerId } from "@/lib/currentCustomer";
 import CloseAlertButton from "@/components/CloseAlertButton";
 import OpenPlatformLink from "@/components/OpenPlatformLink";
+import QuickBooksOverdueInvoicesTable from "@/components/QuickBooksOverdueInvoicesTable";
 import {
   presentAlert,
   type AlertRow,
@@ -14,6 +15,12 @@ import {
 } from "@/lib/alertRegistry";
 
 export const dynamic = "force-dynamic";
+
+// Alpha scope: ONLY show Notion + QuickBooks alerts on Attention page.
+const ALPHA_ALLOWED_ALERT_TYPES = new Set<string>([
+  "notion_stale",
+  "qbo_overdue_invoice",
+]);
 
 function severityFromScore(score: number): Severity {
   if (score >= 90) return "critical";
@@ -69,12 +76,6 @@ function getOpenCta(
   if (system === "quickbooks") {
     return { platform: "QuickBooks", href: urlFromContext || "https://qbo.intuit.com/" };
   }
-  if (system === "stripe") {
-    return { platform: "Stripe", href: urlFromContext || "https://dashboard.stripe.com/" };
-  }
-  if (system === "jira") {
-    return { platform: "Jira", href: urlFromContext || "https://www.atlassian.com/software/jira" };
-  }
 
   return { platform: system, href: urlFromContext || "https://www.google.com" };
 }
@@ -88,7 +89,12 @@ function fmtMoney(cents: number | null) {
   });
 }
 
-export default async function HomePage() {
+function asStringArray(x: any): string[] {
+  if (!Array.isArray(x)) return [];
+  return x.map((v) => String(v)).filter(Boolean);
+}
+
+export default async function Page() {
   const supabase = await supabaseServer();
 
   let customerId: string | null = null;
@@ -101,9 +107,7 @@ export default async function HomePage() {
   if (!customerId) {
     return (
       <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
-        <div className="text-sm font-semibold text-[var(--ops-text)]">
-          No attention items.
-        </div>
+        <div className="text-sm font-semibold text-[var(--ops-text)]">No attention items.</div>
         <div className="mt-2 text-sm text-[var(--ops-text-muted)]">
           Sign in to view your workspace.
         </div>
@@ -111,18 +115,13 @@ export default async function HomePage() {
     );
   }
 
-  const { data: customersRaw } = await supabase
-    .from("customers")
-    .select("*")
-    .eq("id", customerId);
-
+  const { data: customersRaw } = await supabase.from("customers").select("*").eq("id", customerId);
   const customer = ((customersRaw || [])[0] || null) as CustomerRow | null;
 
   const { data: expectedRevenueRaw } = await supabase
     .from("expected_revenue")
     .select("*")
     .eq("customer_id", customerId);
-
   const expectedRevenue = (expectedRevenueRaw || []) as ExpectedRevenueRow[];
   const expected = expectedRevenue[0] || null;
 
@@ -131,7 +130,6 @@ export default async function HomePage() {
     .select("*")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false });
-
   const invoices = (invoicesRaw || []) as InvoiceRow[];
   const latestInvoice = invoices[0] || null;
 
@@ -140,7 +138,6 @@ export default async function HomePage() {
     .select("*")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false });
-
   const payments = (paymentsRaw || []) as PaymentRow[];
   const latestPayment = payments[0] || null;
 
@@ -151,7 +148,16 @@ export default async function HomePage() {
     .order("created_at", { ascending: false });
 
   const alerts = (alertsRaw || []) as AlertRow[];
-  const openAlerts = alerts.filter((a) => a.status === "open");
+
+  // ✅ Alpha enforcement + Stripe hard-block (prevents legacy/leaky rows from surfacing)
+  const openAlerts = alerts.filter((a) => {
+    const src = (a.source_system || "").toLowerCase();
+    return (
+      a.status === "open" &&
+      ALPHA_ALLOWED_ALERT_TYPES.has(a.type) &&
+      src !== "stripe"
+    );
+  });
 
   const presented = openAlerts
     .map((a) => {
@@ -185,9 +191,7 @@ export default async function HomePage() {
     <div>
       {presented.length === 0 ? (
         <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
-          <div className="text-sm font-semibold text-[var(--ops-text)]">
-            No attention items.
-          </div>
+          <div className="text-sm font-semibold text-[var(--ops-text)]">No attention items.</div>
           <div className="mt-2 text-sm text-[var(--ops-text-muted)]">
             If something drifts from expectation, it will appear here.
           </div>
@@ -197,15 +201,25 @@ export default async function HomePage() {
           {presented.map(({ alert, customer, presentation, severity }, idx) => {
             const sevCls = severityRowClasses(severity);
             const sevLabel =
-              severity === "critical"
-                ? "Critical"
-                : severity === "high"
-                ? "High"
-                : "Medium";
+              severity === "critical" ? "Critical" : severity === "high" ? "High" : "Medium";
 
             const customerLabel = customer?.name || customer?.email || "Customer";
-            const cta = getOpenCta(alert, customer);
             const money = fmtMoney(alert.amount_at_risk);
+
+            const ctx: any = (alert as any).context ?? {};
+            const ignoredInvoiceIds = asStringArray(ctx?.ignoredInvoiceIds);
+
+            const isAggregatedQbo = alert.type === "qbo_overdue_invoice";
+
+            const qboInvoices: any[] =
+              isAggregatedQbo && Array.isArray(ctx?.invoices) ? ctx.invoices : [];
+
+            const sortedQboInvoices = qboInvoices
+              .slice()
+              .sort((a, b) => Number(b?.balanceCents ?? 0) - Number(a?.balanceCents ?? 0));
+
+            // For aggregated QBO, top-row CTAs are misleading; actions are per-invoice.
+            const collapsedCta = !isAggregatedQbo ? getOpenCta(alert, customer) : null;
 
             return (
               <details
@@ -244,13 +258,14 @@ export default async function HomePage() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-3">
-                      {cta ? (
+                      {collapsedCta ? (
                         <OpenPlatformLink
-                          href={cta.href}
-                          label={`Open in ${cta.platform}`}
+                          href={collapsedCta.href}
+                          label={`Open in ${collapsedCta.platform}`}
                         />
                       ) : null}
-                      <CloseAlertButton alertId={alert.id} />
+
+                      {!isAggregatedQbo ? <CloseAlertButton alertId={alert.id} /> : null}
                     </div>
                   </div>
                 </summary>
@@ -280,9 +295,7 @@ export default async function HomePage() {
                     <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
                       Drift
                     </div>
-                    <div className="mt-2 text-sm text-[var(--ops-text)]">
-                      {presentation.drift}
-                    </div>
+                    <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.drift}</div>
                   </div>
 
                   <div className="mt-4">
@@ -293,6 +306,17 @@ export default async function HomePage() {
                       {presentation.nextStep}
                     </div>
                   </div>
+
+                  {isAggregatedQbo && sortedQboInvoices.length > 0 ? (
+                    <div className="mt-6">
+                      <QuickBooksOverdueInvoicesTable
+                        alertId={alert.id}
+                        invoices={sortedQboInvoices}
+                        ignoredInvoiceIds={ignoredInvoiceIds}
+                        maxHeightClassName="max-h-72"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </details>
             );

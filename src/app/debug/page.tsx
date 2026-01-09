@@ -1,19 +1,8 @@
 // src/app/debug/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-
-type DebugKey =
-  | "stripe.missed_expected_payment"
-  | "stripe.payment_amount_drift"
-  | "jira.no_recent_client_activity";
-
-type DebugRow = {
-  key: DebugKey;
-  label: string;
-  type: string;
-  source: string;
-};
+import { useEffect, useState } from "react";
+import CloseAlertButton from "@/components/CloseAlertButton";
 
 type AlertRow = {
   id: string;
@@ -25,47 +14,44 @@ type AlertRow = {
   created_at: string;
 };
 
-const SUPPORTED: DebugRow[] = [
-  {
-    key: "stripe.missed_expected_payment",
-    label: "Missed expected payment",
-    type: "missed_expected_payment",
-    source: "stripe",
-  },
-  {
-    key: "stripe.payment_amount_drift",
-    label: "Payment amount drift",
-    type: "payment_amount_drift",
-    source: "stripe",
-  },
-  {
-    key: "jira.no_recent_client_activity",
-    label: "No recent client activity",
-    type: "no_recent_client_activity",
-    source: "jira",
-  },
-];
+function fmtMoney(cents: number | null) {
+  if (cents == null) return "—";
+  return (cents / 100).toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
 
 export default function DebugPage() {
   const [enabled, setEnabled] = useState(true);
   const [customerId, setCustomerId] = useState<string | null>(null);
-
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
-  const [toggles, setToggles] = useState<Record<string, boolean>>({});
-  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string>("");
 
   async function refresh() {
-    const res = await fetch("/api/debug/alerts/list", { method: "GET" });
-    if (!res.ok) {
-      setEnabled(false);
-      return;
+    setLoading(true);
+    setMsg("");
+
+    try {
+      const res = await fetch("/api/debug/alerts/list", { method: "GET" });
+
+      if (!res.ok) {
+        // In prod, debug is often disabled (404). In dev it should be enabled.
+        setEnabled(false);
+        return;
+      }
+
+      const data = await res.json();
+      setEnabled(true);
+      setCustomerId(data.customerId || null);
+      setAlerts((data.alerts || []) as AlertRow[]);
+    } catch (e: any) {
+      setMsg(e?.message || "Failed to load debug data");
+    } finally {
+      setLoading(false);
     }
-    const data = await res.json();
-    setEnabled(true);
-    setCustomerId(data.customerId || null);
-    setAlerts(data.alerts || []);
-    setToggles(data.toggles || {});
   }
 
   useEffect(() => {
@@ -73,136 +59,85 @@ export default function DebugPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rows = useMemo(() => {
-    return SUPPORTED.map((spec) => {
-      const existing = alerts.find(
-        (a) => a.type === spec.type && a.source_system === spec.source
-      );
-      const isOpen = Boolean(toggles[spec.key]);
-      return { spec, existing, isOpen };
-    });
-  }, [alerts, toggles]);
-
-  async function toggleKey(key: DebugKey, enabledToggle: boolean) {
-    setBusy((b) => ({ ...b, [key]: true }));
-    setMsg("");
-
-    try {
-      if (!customerId) throw new Error("No customer");
-
-      const res = await fetch("/api/debug/toggles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, enabled: enabledToggle }),
-      });
-
-      if (!res.ok) throw new Error("Toggle failed");
-
-      const data = await res.json();
-      setToggles((t) => ({ ...t, [key]: enabledToggle }));
-      setAlerts(data.alerts || []);
-      setMsg("Updated.");
-    } catch (e: any) {
-      setMsg(e?.message || "Toggle failed");
-    } finally {
-      setBusy((b) => ({ ...b, [key]: false }));
-    }
-  }
-
   if (!enabled) {
     return (
       <main className="px-0">
         <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
-          <div className="text-sm text-[var(--ops-text-secondary)]">
-            Not found.
-          </div>
+          <div className="text-sm text-[var(--ops-text-secondary)]">Not found.</div>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="px-0">
+    <main className="px-0 space-y-4">
       {msg ? (
-        <div className="mb-4 rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] px-4 py-3 text-sm text-[var(--ops-text)]">
+        <div className="rounded-xl border border-[var(--ops-border)] bg-[var(--ops-surface)] px-4 py-3 text-sm text-[var(--ops-text)]">
           {msg}
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)]">
-        <div className="grid grid-cols-12 border-b border-[var(--ops-border)] bg-[var(--ops-surface)] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-          <div className="col-span-4">Alert</div>
-          <div className="col-span-3">Type</div>
-          <div className="col-span-2">Source</div>
-          <div className="col-span-1">State</div>
-          <div className="col-span-2 text-right">Toggle</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs text-[var(--ops-text-faint)]">
+          customer {customerId ? `${customerId.slice(0, 8)}…` : "—"}
         </div>
 
-        {rows.map(({ spec, existing, isOpen }) => {
-          const isBusy = Boolean(busy[spec.key]);
-          const label = isOpen ? "ON" : "OFF";
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={loading}
+          className="ops-cta-secondary text-xs font-semibold disabled:opacity-60"
+        >
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
 
-          return (
+      <div className="overflow-hidden rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)]">
+        <div className="grid grid-cols-12 border-b border-[var(--ops-border)] bg-[var(--ops-surface)] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
+          <div className="col-span-4">Type</div>
+          <div className="col-span-2">Source</div>
+          <div className="col-span-2">Amount</div>
+          <div className="col-span-2">Created</div>
+          <div className="col-span-2 text-right">Action</div>
+        </div>
+
+        {alerts.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-[var(--ops-text-muted)]">
+            No open alpha alerts for this customer.
+          </div>
+        ) : (
+          alerts.map((a) => (
             <div
-              key={spec.key}
+              key={a.id}
               className="grid grid-cols-12 items-center border-b border-[var(--ops-border)]/60 px-4 py-4 last:border-b-0"
             >
               <div className="col-span-4">
-                <div className="text-sm font-semibold text-[var(--ops-text)]">
-                  {spec.label}
-                </div>
+                <div className="text-sm font-semibold text-[var(--ops-text)]">{a.type}</div>
                 <div className="mt-1 text-xs text-[var(--ops-text-faint)]">
-                  customer {customerId ? `${customerId.slice(0, 8)}…` : "—"}
-                </div>
-              </div>
-
-              <div className="col-span-3">
-                <div className="text-sm text-[var(--ops-text)]">{spec.type}</div>
-                <div className="mt-1 text-xs text-[var(--ops-text-faint)]">
-                  {existing?.amount_at_risk != null
-                    ? `amount_at_risk=${existing.amount_at_risk}`
-                    : "amount_at_risk=—"}
+                  {a.status} · id {a.id.slice(0, 8)}…
                 </div>
               </div>
 
               <div className="col-span-2">
-                <div className="text-sm text-[var(--ops-text)]">{spec.source}</div>
-                <div className="mt-1 text-xs text-[var(--ops-text-faint)]">
-                  {existing?.status ? existing.status : "—"}
+                <div className="text-sm text-[var(--ops-text)]">{a.source_system || "—"}</div>
+              </div>
+
+              <div className="col-span-2">
+                <div className="text-sm text-[var(--ops-text)]">{fmtMoney(a.amount_at_risk)}</div>
+              </div>
+
+              <div className="col-span-2">
+                <div className="text-sm text-[var(--ops-text)]">
+                  {a.created_at ? new Date(a.created_at).toLocaleString() : "—"}
                 </div>
               </div>
 
-              <div className="col-span-1">
-                <div className="text-sm text-[var(--ops-text)]">{label}</div>
-              </div>
-
               <div className="col-span-2 flex justify-end">
-                <button
-                  type="button"
-                  disabled={isBusy || !customerId}
-                  onClick={() => toggleKey(spec.key, !isOpen)}
-                  className={[
-                    "inline-flex items-center justify-center rounded-md border px-2 py-1 text-xs font-semibold transition-colors min-w-[56px]",
-                    "focus:outline-none focus:ring-0",
-                    isOpen
-                      ? "bg-white text-black border-white"
-                      : "bg-black text-white border-white/30",
-                    isBusy || !customerId
-                      ? "opacity-60 cursor-not-allowed"
-                      : "hover:border-white",
-                  ].join(" ")}
-                  title={
-                    isOpen
-                      ? "Click to restore upstream state and clear drift"
-                      : "Click to force upstream drift state"
-                  }
-                >
-                  {isBusy ? "…" : label}
-                </button>
+                <CloseAlertButton alertId={a.id} />
               </div>
             </div>
-          );
-        })}
+          ))
+        )}
       </div>
     </main>
   );
