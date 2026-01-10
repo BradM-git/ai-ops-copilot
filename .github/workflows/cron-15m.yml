@@ -1,0 +1,16 @@
+name: Cron (15m)
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run_cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call cron endpoint
+        run: |
+          curl -sS -X GET "${{ secrets.CRON_BASE_URL }}/api/cron/daily" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -H "authorization: Bearer ${{ secrets.CRON_SECRET }}"
