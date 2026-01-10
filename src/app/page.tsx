@@ -3,7 +3,7 @@ import { supabaseServer } from "@/lib/supabaseServer";
 import { getCurrentCustomerId } from "@/lib/currentCustomer";
 import CloseAlertButton from "@/components/CloseAlertButton";
 import OpenPlatformLink from "@/components/OpenPlatformLink";
-import QuickBooksOverdueInvoicesTable from "@/components/QuickBooksOverdueInvoicesTable";
+import AlertViewSelect from "@/components/AlertViewSelect";
 import {
   presentAlert,
   type AlertRow,
@@ -17,10 +17,13 @@ import {
 export const dynamic = "force-dynamic";
 
 // Alpha scope: ONLY show Notion + QuickBooks alerts on Attention page.
-const ALPHA_ALLOWED_ALERT_TYPES = new Set<string>([
-  "notion_stale",
-  "qbo_overdue_invoice",
-]);
+const ALPHA_ALLOWED_ALERT_TYPES = new Set<string>(["notion_stale", "qbo_overdue_invoice"]);
+
+type SortKey = "urgency" | "recent";
+
+function parseSortKey(x: unknown): SortKey {
+  return x === "recent" ? "recent" : "urgency";
+}
 
 function severityFromScore(score: number): Severity {
   if (score >= 90) return "critical";
@@ -55,6 +58,11 @@ function severityRowClasses(severity: Severity): {
   }
 }
 
+function toMs(iso: string) {
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
 function getOpenCta(
   alert: AlertRow,
   _customer: CustomerRow | null
@@ -67,12 +75,13 @@ function getOpenCta(
     typeof ctx?.url === "string"
       ? ctx.url
       : typeof ctx?.link === "string"
-      ? ctx.link
-      : null;
+        ? ctx.link
+        : null;
 
   if (system === "notion") {
     return { platform: "Notion", href: urlFromContext || "https://www.notion.so/" };
   }
+
   if (system === "quickbooks") {
     return { platform: "QuickBooks", href: urlFromContext || "https://qbo.intuit.com/" };
   }
@@ -89,12 +98,12 @@ function fmtMoney(cents: number | null) {
   });
 }
 
-function asStringArray(x: any): string[] {
-  if (!Array.isArray(x)) return [];
-  return x.map((v) => String(v)).filter(Boolean);
-}
+export default async function Page(props: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = (await props.searchParams) ?? {};
+  const sortKey = parseSortKey(Array.isArray(sp.sort) ? sp.sort[0] : sp.sort);
 
-export default async function Page() {
   const supabase = await supabaseServer();
 
   let customerId: string | null = null;
@@ -108,9 +117,7 @@ export default async function Page() {
     return (
       <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
         <div className="text-sm font-semibold text-[var(--ops-text)]">No attention items.</div>
-        <div className="mt-2 text-sm text-[var(--ops-text-muted)]">
-          Sign in to view your workspace.
-        </div>
+        <div className="mt-2 text-sm text-[var(--ops-text-muted)]">Sign in to view your workspace.</div>
       </div>
     );
   }
@@ -149,46 +156,59 @@ export default async function Page() {
 
   const alerts = (alertsRaw || []) as AlertRow[];
 
-  // ✅ Alpha enforcement + Stripe hard-block (prevents legacy/leaky rows from surfacing)
   const openAlerts = alerts.filter((a) => {
     const src = (a.source_system || "").toLowerCase();
-    return (
-      a.status === "open" &&
-      ALPHA_ALLOWED_ALERT_TYPES.has(a.type) &&
-      src !== "stripe"
-    );
+    return a.status === "open" && ALPHA_ALLOWED_ALERT_TYPES.has(a.type) && src !== "stripe";
   });
 
-  const presented = openAlerts
-    .map((a) => {
-      const pres0 = presentAlert({
-        alert: a,
-        customer,
-        expected,
-        latestInvoice,
-        latestPayment,
-        overdueDays: null,
-        severity: "medium",
-      });
+  let presented = openAlerts.map((a) => {
+    const pres0 = presentAlert({
+      alert: a,
+      customer,
+      expected,
+      latestInvoice,
+      latestPayment,
+      overdueDays: null,
+      severity: "medium",
+    });
 
-      const sev = severityFromScore(pres0.score);
+    const sev = severityFromScore(pres0.score);
 
-      const final = presentAlert({
-        alert: a,
-        customer,
-        expected,
-        latestInvoice,
-        latestPayment,
-        overdueDays: null,
-        severity: sev,
-      });
+    const final = presentAlert({
+      alert: a,
+      customer,
+      expected,
+      latestInvoice,
+      latestPayment,
+      overdueDays: null,
+      severity: sev,
+    });
 
-      return { alert: a, customer, presentation: final, severity: sev };
-    })
-    .sort((x, y) => y.presentation.score - x.presentation.score);
+    return { alert: a, customer, presentation: final, severity: sev };
+  });
+
+  // Restore sort behavior (Sort by: Urgency or Recent)
+  if (sortKey === "recent") {
+    presented = presented.sort((x, y) => {
+      const dt = toMs(y.alert.created_at) - toMs(x.alert.created_at);
+      if (dt !== 0) return dt;
+      return (y.presentation.score ?? 0) - (x.presentation.score ?? 0);
+    });
+  } else {
+    presented = presented.sort((x, y) => {
+      const ds = (y.presentation.score ?? 0) - (x.presentation.score ?? 0);
+      if (ds !== 0) return ds;
+      return toMs(y.alert.created_at) - toMs(x.alert.created_at);
+    });
+  }
 
   return (
     <div>
+      {/* Keep existing layout; only re-add the Sort control */}
+      <div className="mb-3 flex items-center justify-end">
+        <AlertViewSelect />
+      </div>
+
       {presented.length === 0 ? (
         <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
           <div className="text-sm font-semibold text-[var(--ops-text)]">No attention items.</div>
@@ -200,26 +220,12 @@ export default async function Page() {
         <div className="overflow-hidden rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)]">
           {presented.map(({ alert, customer, presentation, severity }, idx) => {
             const sevCls = severityRowClasses(severity);
-            const sevLabel =
-              severity === "critical" ? "Critical" : severity === "high" ? "High" : "Medium";
+            const sevLabel = severity === "critical" ? "Critical" : severity === "high" ? "High" : "Medium";
 
             const customerLabel = customer?.name || customer?.email || "Customer";
             const money = fmtMoney(alert.amount_at_risk);
 
-            const ctx: any = (alert as any).context ?? {};
-            const ignoredInvoiceIds = asStringArray(ctx?.ignoredInvoiceIds);
-
-            const isAggregatedQbo = alert.type === "qbo_overdue_invoice";
-
-            const qboInvoices: any[] =
-              isAggregatedQbo && Array.isArray(ctx?.invoices) ? ctx.invoices : [];
-
-            const sortedQboInvoices = qboInvoices
-              .slice()
-              .sort((a, b) => Number(b?.balanceCents ?? 0) - Number(a?.balanceCents ?? 0));
-
-            // For aggregated QBO, top-row CTAs are misleading; actions are per-invoice.
-            const collapsedCta = !isAggregatedQbo ? getOpenCta(alert, customer) : null;
+            const collapsedCta = getOpenCta(alert, customer);
 
             return (
               <details
@@ -243,9 +249,7 @@ export default async function Page() {
                         </span>
 
                         {money ? (
-                          <span className="text-xs text-[var(--ops-text-muted)]">
-                            {money} at risk
-                          </span>
+                          <span className="text-xs text-[var(--ops-text-muted)]">{money} at risk</span>
                         ) : null}
                       </div>
 
@@ -259,13 +263,10 @@ export default async function Page() {
 
                     <div className="flex shrink-0 items-center gap-3">
                       {collapsedCta ? (
-                        <OpenPlatformLink
-                          href={collapsedCta.href}
-                          label={`Open in ${collapsedCta.platform}`}
-                        />
+                        <OpenPlatformLink href={collapsedCta.href} label={`Open in ${collapsedCta.platform}`} />
                       ) : null}
 
-                      {!isAggregatedQbo ? <CloseAlertButton alertId={alert.id} /> : null}
+                      <CloseAlertButton alertId={alert.id} />
                     </div>
                   </div>
                 </summary>
@@ -276,18 +277,14 @@ export default async function Page() {
                       <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
                         Expectation
                       </div>
-                      <div className="mt-2 text-sm text-[var(--ops-text)]">
-                        {presentation.expectation}
-                      </div>
+                      <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.expectation}</div>
                     </div>
 
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
                         Observation
                       </div>
-                      <div className="mt-2 text-sm text-[var(--ops-text)]">
-                        {presentation.observation}
-                      </div>
+                      <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.observation}</div>
                     </div>
                   </div>
 
@@ -302,21 +299,8 @@ export default async function Page() {
                     <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
                       Next step
                     </div>
-                    <div className="mt-2 text-sm text-[var(--ops-text)]">
-                      {presentation.nextStep}
-                    </div>
+                    <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.nextStep}</div>
                   </div>
-
-                  {isAggregatedQbo && sortedQboInvoices.length > 0 ? (
-                    <div className="mt-6">
-                      <QuickBooksOverdueInvoicesTable
-                        alertId={alert.id}
-                        invoices={sortedQboInvoices}
-                        ignoredInvoiceIds={ignoredInvoiceIds}
-                        maxHeightClassName="max-h-72"
-                      />
-                    </div>
-                  ) : null}
                 </div>
               </details>
             );

@@ -21,35 +21,37 @@ function NavLink({
     <Link
       href={href}
       className={[
-        "group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ops-focus)]",
+        "relative flex items-center rounded-xl px-3 py-2 text-sm",
         isActive
-          ? "bg-[var(--ops-surface)] text-[var(--ops-text)]"
-          : "text-[var(--ops-text-muted)] hover:bg-[var(--ops-hover)] hover:text-[var(--ops-text)]",
+          ? "bg-[var(--ops-surface-2)] text-[var(--ops-text)]"
+          : "text-[var(--ops-text-muted)] hover:bg-[var(--ops-surface-2)] hover:text-[var(--ops-text)]",
       ].join(" ")}
     >
-      <span
-        className={[
-          "h-5 w-1 rounded-full transition-colors",
-          isActive ? "bg-[var(--ops-accent)]" : "bg-transparent",
-        ].join(" ")}
-      />
-      <span>{label}</span>
+      {/* Left rail */}
+      {isActive ? (
+        <span
+          aria-hidden
+          className="absolute left-1 top-1 bottom-1 w-1 rounded-full bg-[var(--ops-accent)]"
+        />
+      ) : null}
+
+      <span className="ml-3 font-medium">{label}</span>
     </Link>
   );
 }
 
 export default function SideNav() {
-  const pathname = usePathname();
+  const pathname = usePathname() || "/";
 
   return (
-    <div>
-      <div className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-        Workspace
-      </div>
-
+    <div className="w-full">
       <nav className="space-y-1">
         <NavLink href="/" label="Attention" isActive={isActivePath(pathname, "/")} />
+        <NavLink
+          href="/how-it-works"
+          label="How it works"
+          isActive={isActivePath(pathname, "/how-it-works")}
+        />
         <NavLink
           href="/debug"
           label="Debug"

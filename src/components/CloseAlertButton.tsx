@@ -43,14 +43,12 @@ export default function CloseAlertButton({ alertId }: { alertId: string }) {
         onClick={onClose}
         disabled={loading || done}
         className="ops-cta-primary text-xs font-semibold disabled:opacity-60"
-        title="Use only if this is not actually an issue. Prefer letting items auto-resolve."
+        title="Dismiss this alert (use only if this is not actually an issue). Prefer letting items auto-resolve."
       >
-        {done ? "Noted" : loading ? "Saving…" : "Not An Issue"}
+        {done ? "Noted" : loading ? "Saving…" : "Dismiss"}
       </button>
 
-      {err ? (
-        <span className="text-xs text-[var(--ops-sev-critical)]">{err}</span>
-      ) : null}
+      {err ? <span className="text-xs text-[var(--ops-sev-critical)]">{err}</span> : null}
     </div>
   );
 }

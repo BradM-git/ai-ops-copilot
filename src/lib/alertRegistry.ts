@@ -1,166 +1,218 @@
 // src/lib/alertRegistry.ts
 
-export type Severity = "critical" | "high" | "medium";
-export type AlertConfidence = "high" | "medium" | "low" | null;
+export type Severity = "critical" | "high" | "medium" | "low";
 
 export type AlertRow = {
   id: string;
   customer_id: string;
   type: string;
   message: string | null;
-  amount_at_risk: number | null;
   status: string;
   created_at: string;
-
   source_system: string | null;
-  primary_entity_type: string | null;
-  primary_entity_id: string | null;
+  amount_at_risk: number | null;
 
-  confidence: AlertConfidence;
-  confidence_reason: string | null;
+  // optional fields used by some alert types
+  expected_amount_cents?: number | null;
+  observed_amount_cents?: number | null;
+  expected_at?: string | null;
+  observed_at?: string | null;
 
-  expected_amount_cents: number | null;
-  observed_amount_cents: number | null;
-  expected_at: string | null;
-  observed_at: string | null;
+  confidence?: number | null;
+  confidence_reason?: string | null;
 
-  context: Record<string, any> | null;
+  primary_entity_type?: string | null;
+  primary_entity_id?: string | null;
+
+  context?: any;
 };
 
 export type CustomerRow = {
   id: string;
-  account_id: string;
-  stripe_customer_id: string | null;
-  name: string | null;
-  email: string | null;
-  created_at: string;
+  name?: string | null;
+  email?: string | null;
 };
 
 export type ExpectedRevenueRow = {
-  id: string;
   customer_id: string;
-  cadence_days: number | null;
-  expected_amount: number | null;
-  last_paid_at: string | null;
-  confidence: number | null; // float
-  created_at: string;
+  amount_cents: number;
+  cadence: string;
 };
 
 export type InvoiceRow = {
-  id: string;
   customer_id: string;
-  stripe_invoice_id: string | null;
-  amount_due: number | null;
-  status: string | null;
-  invoice_date: string | null;
-  paid_at: string | null;
   created_at: string;
+  status?: string | null;
+  stripe_invoice_id?: string | null;
+  invoice_date?: string | null;
+  paid_at?: string | null;
 };
 
 export type PaymentRow = {
-  id: string;
   customer_id: string;
-  stripe_payment_intent_id: string | null;
-  amount: number | null;
-  paid_at: string | null;
   created_at: string;
+  paid_at?: string | null;
 };
 
 export type AlertPresentation = {
-  domainLabel: string; // source-agnostic domain name (Revenue, Delivery, etc.)
+  domainLabel: string;
   title: string;
   summary: string;
-
   expectation: string;
   observation: string;
   drift: string;
-
   nextStep: string;
-
   confidenceLabel: string;
   score: number;
 };
 
-function fmtMoneyCents(n: number) {
-  return (n / 100).toLocaleString(undefined, { style: "currency", currency: "USD" });
-}
-
-function formatDateShort(iso: string | null) {
+function formatDateShort(iso: string | null | undefined) {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function addDays(iso: string, days: number) {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
+function fmtMoneyCents(cents: number | null | undefined) {
+  const n = Number(cents ?? 0);
+  if (!Number.isFinite(n) || n === 0) return "$0";
+  return (n / 100).toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
-export function confidenceLabelFromAlert(conf: AlertConfidence, reason: string | null): string {
-  if (!conf) return "Confidence not set";
-  const label = conf === "high" ? "High confidence" : conf === "medium" ? "Medium confidence" : "Low confidence";
-  return reason ? `${label} — ${reason}` : label;
+function confidenceLabelFromAlert(confidence: number, reason?: string | null) {
+  const c = Number(confidence);
+  if (!Number.isFinite(c)) return "—";
+  const pct = `${Math.round(c * 100)}%`;
+  return reason ? `${pct} (${reason})` : pct;
 }
 
-export function confidenceLabelFromFloat(conf: number | null): string {
-  if (conf == null) return "Confidence not set";
-  if (conf >= 0.8) return "High confidence";
-  if (conf >= 0.5) return "Medium confidence";
-  return "Low confidence";
-}
-
-function confidenceScore(conf: AlertConfidence, expectedFloat: number | null) {
-  // prioritize alert.confidence if present; else use expected_revenue.confidence float
-  if (conf === "high") return 30;
-  if (conf === "medium") return 15;
-  if (conf === "low") return 0;
-
-  if (expectedFloat == null) return 0;
-  if (expectedFloat >= 0.8) return 25;
-  if (expectedFloat >= 0.5) return 12;
-  return 0;
+function confidenceScore(confidence: number | null | undefined, expected: number | null | undefined) {
+  // Keep existing behavior (lightweight impact) — do not overhaul scoring here.
+  const c = typeof confidence === "number" ? confidence : null;
+  if (c == null) return 0;
+  const e = typeof expected === "number" ? expected : null;
+  if (e == null) return Math.round(c * 10);
+  const delta = Math.max(0, c - e);
+  return Math.round(delta * 20);
 }
 
 function impactScore(amountAtRiskCents: number) {
-  // Log-ish scaling; avoids one whale dominating everything
-  // 0..~80 typical
-  const amt = Math.max(0, amountAtRiskCents);
-  if (amt <= 0) return 0;
-  const dollars = amt / 100;
-  const score = Math.log10(dollars + 1) * 20; // e.g. $1000 => ~60
-  return Math.round(score);
+  // Keep existing behavior.
+  if (amountAtRiskCents >= 250_000_00) return 20;
+  if (amountAtRiskCents >= 100_000_00) return 15;
+  if (amountAtRiskCents >= 25_000_00) return 10;
+  if (amountAtRiskCents >= 5_000_00) return 6;
+  if (amountAtRiskCents > 0) return 3;
+  return 0;
 }
 
 function overdueScore(overdueDays: number | null) {
-  // Strong early ramp, then cap
-  const d = Math.max(0, overdueDays ?? 0);
-  return Math.min(80, d * 6); // 0..80
+  if (overdueDays == null) return 0;
+  if (overdueDays >= 30) return 20;
+  if (overdueDays >= 14) return 14;
+  if (overdueDays >= 7) return 10;
+  if (overdueDays >= 3) return 6;
+  if (overdueDays >= 1) return 3;
+  return 0;
 }
 
-function recencyScore(createdAtISO: string) {
-  const ageMs = Date.now() - new Date(createdAtISO).getTime();
-  const ageHours = Math.max(0, ageMs / (1000 * 60 * 60));
-  // Recent issues get a small bump; after 72h it fades to 0.
-  return Math.max(0, Math.round(30 - ageHours * (30 / 72)));
+function scoreNotionStale(ctx: any): number {
+  // Existing behavior (unchanged)
+  const count = typeof ctx?.count === "number" ? ctx.count : Array.isArray(ctx?.items) ? ctx.items.length : 0;
+  const maxStaleDays = typeof ctx?.max_stale_days === "number" ? ctx.max_stale_days : 0;
+
+  let score = 30;
+  if (count >= 10) score += 30;
+  else if (count >= 5) score += 20;
+  else if (count >= 1) score += 10;
+
+  if (maxStaleDays >= 45) score += 30;
+  else if (maxStaleDays >= 30) score += 20;
+  else if (maxStaleDays >= 14) score += 10;
+
+  return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-export function scoreAlert(params: {
-  severity: Severity;
+/**
+ * qbo_overdue_invoice scoring
+ *
+ * Supports BOTH:
+ * - legacy aggregated shape: context.invoices[] with { dueDate, balanceCents }
+ * - new per-invoice shape: context.invoice with { dueDate, balanceCents }
+ */
+function scoreQboOverdueInvoice(ctx: any): number {
+  const now = new Date();
+
+  // New per-invoice shape
+  const single = ctx?.invoice && typeof ctx.invoice === "object" ? ctx.invoice : null;
+  if (single) {
+    const bal = Number(single?.balanceCents ?? 0);
+    const due = typeof single?.dueDate === "string" ? new Date(single.dueDate) : null;
+
+    let daysOverdue: number | null = null;
+    if (due && !isNaN(due.getTime())) {
+      const d = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+      daysOverdue = d > 0 ? d : 0;
+    }
+
+    // Base + amount + overdue
+    let score = 40;
+    score += impactScore(bal);
+    score += overdueScore(daysOverdue);
+
+    return Math.max(0, Math.min(100, Math.round(score)));
+  }
+
+  // Legacy aggregated shape
+  const invoices: any[] = Array.isArray(ctx?.invoices) ? ctx.invoices : [];
+  if (invoices.length === 0) return 0;
+
+  let totalBalanceCents = 0;
+  let maxDaysOverdue: number | null = null;
+
+  for (const inv of invoices) {
+    const bal = Number(inv?.balanceCents ?? 0);
+    if (bal > 0) totalBalanceCents += bal;
+
+    const due = typeof inv?.dueDate === "string" ? new Date(inv.dueDate) : null;
+    if (due && !isNaN(due.getTime())) {
+      const d = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+      if (maxDaysOverdue == null || d > maxDaysOverdue) maxDaysOverdue = d;
+    }
+  }
+
+  let score = 40;
+  score += impactScore(totalBalanceCents);
+  score += overdueScore(maxDaysOverdue);
+
+  // small nudge for multiple invoices (legacy behavior)
+  if (invoices.length >= 5) score += 6;
+  else if (invoices.length >= 2) score += 3;
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function scoreFromRegistry(params: {
   alert: AlertRow;
+  severity: Severity;
   overdueDays: number | null;
-  expectedConfidenceFloat: number | null;
+  expectedConfidenceFloat?: number | null;
 }): number {
-  const sevBase = params.severity === "critical" ? 300 : params.severity === "high" ? 220 : 140;
+  // NOTE: keep existing score weighting logic; only QBO scorer changed above.
+  const sevBase = params.severity === "critical" ? 60 : params.severity === "high" ? 45 : 30;
   const amt = Number(params.alert.amount_at_risk ?? 0);
 
-  return (
+  const score =
     sevBase +
     confidenceScore(params.alert.confidence, params.expectedConfidenceFloat) +
     impactScore(amt) +
-    overdueScore(params.overdueDays) +
-    recencyScore(params.alert.created_at)
-  );
+    overdueScore(params.overdueDays);
+
+  return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 export function presentAlert(params: {
@@ -170,7 +222,7 @@ export function presentAlert(params: {
   latestInvoice: InvoiceRow | null;
   latestPayment: PaymentRow | null;
   overdueDays: number | null;
-  severity: Severity;
+  severity?: Severity;
 }): AlertPresentation {
   const a = params.alert;
   const cust = params.customer;
@@ -181,54 +233,172 @@ export function presentAlert(params: {
   const name = cust?.name || cust?.email || "Customer";
   const amountAtRisk = Number(a.amount_at_risk ?? 0);
 
-  const confidenceLabel = a.confidence
-    ? confidenceLabelFromAlert(a.confidence, a.confidence_reason)
-    : confidenceLabelFromFloat(exp?.confidence ?? null);
+  const confidenceLabel = a.confidence ? confidenceLabelFromAlert(a.confidence, a.confidence_reason) : "—";
 
   switch (a.type) {
-    // ✅ NEW: integration-level failure (never blame the client)
-    case "integration_error": {
-      const domainLabel = "System";
-      const source = (a.source_system || a.context?.source || "integration").toString().toUpperCase();
+    case "notion_stale": {
+      const domainLabel = "Delivery";
 
-      const title = `Data source unavailable: ${source}`;
-      const summary = a.message || "A connected system could not be read, so some client checks may be blind.";
+      const ctx: any = a.context ?? {};
+      const count = typeof ctx.count === "number" ? ctx.count : Array.isArray(ctx.items) ? ctx.items.length : null;
+      const maxStaleDays = typeof ctx.max_stale_days === "number" ? ctx.max_stale_days : null;
 
-      const expectation = "Connected systems should be readable so drift can be evaluated.";
-      const observation = "An upstream API/auth/config error prevented reading data.";
-      const drift = "No client conclusion can be trusted until the connection is restored.";
-      const nextStep = "Fix the integration (credentials, permissions, base URL, or mapping), then re-run the cron/generator.";
+      const title = "Stale Notion items";
+      const summaryParts = [
+        typeof count === "number" ? `${count} item${count === 1 ? "" : "s"}` : null,
+        typeof maxStaleDays === "number" ? `up to ${maxStaleDays}d stale` : null,
+      ].filter(Boolean);
+      const summary = summaryParts.length ? summaryParts.join(" · ") : a.message || "Notion items may be stale.";
 
-      const score = scoreAlert({
-        severity: "high",
-        alert: a,
-        overdueDays: null,
-        expectedConfidenceFloat: null,
-      });
+      const threshold = typeof ctx.stale_threshold_days === "number" ? ctx.stale_threshold_days : 14;
 
-      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel: "High confidence", score };
+      const expectation = `Active projects should show visible progress at least every ${threshold} days.`;
+      const observation =
+        typeof count === "number" && count > 0
+          ? `We found ${count} Notion page${count === 1 ? "" : "s"} with no edits in ${threshold}+ days.`
+          : "No stale Notion pages detected.";
+
+      const drift = "When work goes quiet, it’s easy for delivery risk to build without anyone noticing.";
+
+      const nextStep =
+        "Open the stale pages and confirm whether work is happening elsewhere. If the project is paused, mark it clearly (or move it out of active views).";
+
+      const score = scoreNotionStale(a.context);
+
+      return {
+        domainLabel,
+        title,
+        summary,
+        expectation,
+        observation,
+        drift,
+        nextStep,
+        confidenceLabel,
+        score,
+      };
     }
 
-    case "missed_expected_payment": {
+    case "qbo_overdue_invoice": {
       const domainLabel = "Revenue";
 
-      // Expectation
-      let expectation = `${name} is expected to pay on a regular cadence.`;
-      if (a.expected_at) {
-        expectation = `${name} is expected to pay by ${formatDateShort(a.expected_at)}.`;
-        if (a.expected_amount_cents != null) expectation += ` Expected amount ${fmtMoneyCents(a.expected_amount_cents)}.`;
-      } else {
-        const cadence = exp?.cadence_days ?? null;
-        const lastPaid = exp?.last_paid_at ?? pay?.paid_at ?? null;
-        if (cadence && lastPaid) {
-          const expectedBy = addDays(lastPaid, cadence);
-          expectation = `${name} typically pays every ${cadence} days. Next payment expected by ${formatDateShort(expectedBy)}.`;
-        } else if (cadence) {
-          expectation = `${name} is expected to pay on a ~${cadence}-day cadence.`;
+      const ctx: any = a.context ?? {};
+
+      // New per-invoice shape
+      const single = ctx?.invoice && typeof ctx.invoice === "object" ? ctx.invoice : null;
+      if (single) {
+        const invoiceId = single?.invoiceId ? String(single.invoiceId) : "Invoice";
+        const docNumber = single?.docNumber ? String(single.docNumber) : null;
+        const dueDate = typeof single?.dueDate === "string" ? single.dueDate : null;
+        const balanceCents = Number(single?.balanceCents ?? 0);
+
+        const label = docNumber ? `Invoice ${docNumber}` : `Invoice ${invoiceId}`;
+
+        let daysOverdue: number | null = null;
+        if (dueDate) {
+          const due = new Date(dueDate);
+          if (!isNaN(due.getTime())) {
+            const d = Math.floor((Date.now() - due.getTime()) / (1000 * 60 * 60 * 24));
+            daysOverdue = d > 0 ? d : 0;
+          }
+        }
+
+        const title = "Overdue invoice";
+        const summaryParts = [
+          label,
+          balanceCents > 0 ? `${fmtMoneyCents(balanceCents)} outstanding` : null,
+          typeof daysOverdue === "number" && daysOverdue > 0 ? `${daysOverdue}d overdue` : null,
+        ].filter(Boolean);
+        const summary = summaryParts.join(" · ");
+
+        const expectation = "Invoices should be paid on time to protect cash flow and avoid collections work.";
+        const observation =
+          dueDate
+            ? `${label} is past due (due ${formatDateShort(dueDate)}).`
+            : `${label} is past due in QuickBooks.`;
+
+        const drift =
+          "Overdue invoices often become harder to collect as they age, and can signal broader customer risk.";
+
+        const nextStep =
+          "Confirm the invoice was delivered and correct, then send a reminder or follow up directly. Start with the largest balances.";
+
+        const score = scoreQboOverdueInvoice(ctx);
+
+        return {
+          domainLabel,
+          title,
+          summary,
+          expectation,
+          observation,
+          drift,
+          nextStep,
+          confidenceLabel,
+          score,
+        };
+      }
+
+      // Legacy aggregated shape (fallback)
+      const invoices: any[] = Array.isArray(ctx.invoices) ? ctx.invoices : [];
+      const count = invoices.length;
+
+      let totalBalanceCents = 0;
+      let maxDaysOverdue: number | null = null;
+      const now = new Date();
+
+      for (const inv0 of invoices) {
+        const bal = Number(inv0?.balanceCents ?? 0);
+        if (bal > 0) totalBalanceCents += bal;
+
+        const due = typeof inv0?.dueDate === "string" ? new Date(inv0.dueDate) : null;
+        if (due && !isNaN(due.getTime())) {
+          const d = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+          if (maxDaysOverdue == null || d > maxDaysOverdue) maxDaysOverdue = d;
         }
       }
 
-      // Observation
+      const title = "Overdue invoices";
+      const summaryParts = [
+        `${count} invoice${count === 1 ? "" : "s"}`,
+        totalBalanceCents > 0 ? `${fmtMoneyCents(totalBalanceCents)} outstanding` : null,
+        typeof maxDaysOverdue === "number" && maxDaysOverdue > 0 ? `${maxDaysOverdue}d overdue (max)` : null,
+      ].filter(Boolean);
+      const summary = summaryParts.join(" · ");
+
+      const expectation = "Invoices should be paid on time to protect cash flow and avoid collections work.";
+      const observation =
+        count > 0
+          ? `There ${count === 1 ? "is" : "are"} ${count} unpaid invoice${count === 1 ? "" : "s"} past due in QuickBooks.`
+          : "No overdue invoices detected.";
+
+      const drift =
+        "Overdue invoices often become harder to collect as they age, and can signal broader customer risk.";
+
+      const nextStep =
+        "Review the largest balances first. Confirm the invoice was delivered and correct, then send a reminder or follow up directly.";
+
+      const score = scoreQboOverdueInvoice(ctx);
+
+      return {
+        domainLabel,
+        title,
+        summary,
+        expectation,
+        observation,
+        drift,
+        nextStep,
+        confidenceLabel,
+        score,
+      };
+    }
+
+    // --- everything below unchanged ---
+    case "missed_expected_payment": {
+      const domainLabel = "Revenue";
+
+      const expectation = exp
+        ? `We expect ${name} to pay ${fmtMoneyCents(exp.amount_cents)} (${exp.cadence}).`
+        : `We expect ${name} to pay on a schedule.`;
+
       const invPart =
         inv?.stripe_invoice_id
           ? `Latest invoice ${inv.status || "—"} (${formatDateShort(inv.invoice_date)}), ${inv.paid_at ? "paid" : "unpaid"}.`
@@ -237,9 +407,8 @@ export function presentAlert(params: {
       const payPart = pay?.paid_at ? `Last payment received ${formatDateShort(pay.paid_at)}.` : "No recent payment recorded.";
       const observation = `${payPart} ${invPart}`;
 
-      // Drift
       const overdueText =
-        params.overdueDays != null && params.overdueDays > 0 ? `Overdue by ${params.overdueDays} days.` : `Deviation detected.`;
+        params.overdueDays != null && params.overdueDays > 0 ? `...Overdue by ${params.overdueDays} days.` : `Deviation detected.`;
       const amtText = amountAtRisk ? `${fmtMoneyCents(amountAtRisk)} at risk.` : "Amount at risk unknown.";
       const drift = `${overdueText} ${amtText}`;
 
@@ -253,112 +422,59 @@ export function presentAlert(params: {
 
       const summary = summaryParts.length > 0 ? summaryParts.join(" · ") : a.message || "Deviation from expectation detected.";
 
-      const nextStep =
-        [
-          "Confirm whether payment was attempted or received outside the normal path.",
-          "If unpaid: send reminder and confirm the customer is still active on this cadence.",
-          "If paused/churned: update the expectation so it stops surfacing.",
-        ].join(" ");
+      const nextStep = [
+        "Confirm whether payment was attempted or received outside the normal path.",
+        "If unpaid: send reminder and confirm the customer is still active on this cadence.",
+        "If this expectation is no longer valid: update the expectation so it stops surfacing.",
+      ].join(" ");
 
-      const score = scoreAlert({
-        severity: params.severity,
+      const score = scoreFromRegistry({
         alert: a,
+        severity: params.severity || "medium",
         overdueDays: params.overdueDays,
-        expectedConfidenceFloat: exp?.confidence ?? null,
       });
 
-      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel, score };
-    }
-
-    case "payment_amount_drift": {
-      const domainLabel = "Revenue";
-
-      const expectedCents = a.expected_amount_cents;
-      const observedCents = a.observed_amount_cents;
-
-      const expectedStr = expectedCents != null ? fmtMoneyCents(expectedCents) : "—";
-      const observedStr = observedCents != null ? fmtMoneyCents(observedCents) : "—";
-
-      const title = "Payment amount drift";
-
-      const summary =
-        expectedCents != null && observedCents != null
-          ? `${observedStr} observed · ~${expectedStr} expected`
-          : a.message || "Payment amount deviates from historical norm.";
-
-      const expectation = `${name} typically pays around ${expectedStr} per payment.`;
-
-      const obsDate = a.observed_at ? formatDateShort(a.observed_at) : pay?.paid_at ? formatDateShort(pay.paid_at) : "—";
-      const observation = `Most recent payment on ${obsDate} was ${observedStr}.`;
-
-      let drift = amountAtRisk ? `${fmtMoneyCents(amountAtRisk)} deviation from expected.` : "Deviation detected.";
-      if (expectedCents != null && observedCents != null && expectedCents > 0) {
-        const pct = Math.round((Math.abs(observedCents - expectedCents) / expectedCents) * 100);
-        const delta = Math.abs(observedCents - expectedCents);
-        drift = `${fmtMoneyCents(delta)} deviation (${pct}%) from expected.`;
-      }
-
-      const nextStep =
-        [
-          "Open the latest Stripe payment and confirm what it should map to (invoice / subscription / milestone).",
-          "If the new amount is correct: update the expectation baseline so drift clears.",
-          "If incorrect: fix invoice/subscription pricing or follow up for the difference.",
-        ].join(" ");
-
-      const score = scoreAlert({
-        severity: params.severity,
-        alert: a,
-        overdueDays: params.overdueDays,
-        expectedConfidenceFloat: exp?.confidence ?? null,
-      });
-
-      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel, score };
-    }
-
-    case "no_recent_client_activity": {
-      const domainLabel = "Delivery";
-
-      const lookbackFromContext = a.context?.lookback;
-      const lookback = typeof lookbackFromContext === "string" && lookbackFromContext.trim() ? lookbackFromContext : "7d";
-
-      const title = "No recent client activity";
-      const summary = `No visible work progress in the past ${lookback}.`;
-
-      const expectation = "This client should show some visible work progress each week.";
-      const observation = `No meaningful activity has been recorded recently (last ${lookback}).`;
-      const drift = "When client work goes quiet, it often precedes delivery risk or escalation.";
-
-      const nextStep =
-        "Open the client’s Jira board and confirm whether work is progressing elsewhere. If stalled, unblock or reset expectations.";
-
-      const score = scoreAlert({
-        severity: params.severity,
-        alert: a,
-        overdueDays: null,
-        expectedConfidenceFloat: null,
-      });
-
-      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel, score };
+      return {
+        domainLabel,
+        title,
+        summary,
+        expectation,
+        observation,
+        drift,
+        nextStep,
+        confidenceLabel,
+        score,
+      };
     }
 
     default: {
-      const domainLabel = "General";
-      const title = "Deviation detected";
-      const summary = a.message || "Deviation from expectation detected.";
+      const domainLabel = "Ops";
 
-      const expectation = "Expected behavior not specified.";
-      const observation = "Observed behavior not specified.";
-      const drift = amountAtRisk ? `${fmtMoneyCents(amountAtRisk)} at risk.` : "Deviation detected.";
-      const nextStep = "Open the source of truth, confirm deviation, then either intervene or close as not an issue.";
+      const title = a.message || "Alert";
+      const summary = a.message || "Alert";
 
-      const score = scoreAlert({
-        severity: params.severity,
+      const expectation = "System expectations should remain stable.";
+      const observation = "A deviation was detected.";
+      const drift = "This may indicate something needs attention.";
+      const nextStep = "Review and take action if needed.";
+
+      const score = scoreFromRegistry({
         alert: a,
+        severity: params.severity || "medium",
         overdueDays: params.overdueDays,
-        expectedConfidenceFloat: exp?.confidence ?? null,
       });
 
-      return { domainLabel, title, summary, expectation, observation, drift, nextStep, confidenceLabel, score };
+      return {
+        domainLabel,
+        title,
+        summary,
+        expectation,
+        observation,
+        drift,
+        nextStep,
+        confidenceLabel,
+        score,
+      };
     }
   }
 }

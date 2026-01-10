@@ -8,20 +8,18 @@ export async function GET(req: Request) {
     const origin =
       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
 
+    // Alpha cron scope: only run routes that are green + supported by prod schema.
     const paths = [
       "/api/logic/customer-defaults",
       "/api/logic/alerts/missed",
-      "/api/logic/alerts/no-client-activity",
       "/api/logic/alerts/notion-stale",
+      "/api/logic/alerts/qbo-overdue-invoices",
       "/api/logic/alerts/suppress-inactive",
-      "/api/logic/expected-revenue",
-      "/api/logic/alerts/amount-drift",
     ];
 
     const results = await Promise.all(
       paths.map(async (p) => {
         const r = await fetch(`${origin}${p}`, {
-          method: "GET",
           headers: {
             "x-cron-secret": req.headers.get("x-cron-secret") ?? "",
             authorization: req.headers.get("authorization") ?? "",
