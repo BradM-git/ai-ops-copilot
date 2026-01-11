@@ -32,12 +32,12 @@ export async function GET(req: Request) {
 
     const supabase = supabaseAdmin();
 
+    // Keep the existing alert type key to avoid changing other code paths during this step.
+    // Behavior changes: this type is now "pattern-based" (one alert per customer), not per invoice.
     const alertType = "qbo_overdue_invoice";
     const sourceSystem = "quickbooks";
 
-    const { data: customers, error: custErr } = await supabase
-      .from("customers")
-      .select("id");
+    const { data: customers, error: custErr } = await supabase.from("customers").select("id");
     if (custErr) {
       return NextResponse.json(
         { ok: false, stage: "load_customers", error: custErr.message },
@@ -61,6 +61,7 @@ export async function GET(req: Request) {
         );
       }
 
+      // Load any open alerts for this customer+type (could include legacy per-invoice alerts).
       const { data: openAlerts, error: openErr } = await supabase
         .from("alerts")
         .select("id,primary_entity_id")
@@ -75,13 +76,13 @@ export async function GET(req: Request) {
         );
       }
 
-      const openByInvoiceId = new Map<string, { id: string }>();
-      const legacyAggregatedIds: string[] = [];
+      const legacyPerInvoiceIds: string[] = [];
+      let existingAggregatedId: string | null = null;
 
       for (const row of openAlerts || []) {
         const invId = row?.primary_entity_id ? String(row.primary_entity_id) : "";
-        if (invId) openByInvoiceId.set(invId, { id: String(row.id) });
-        else legacyAggregatedIds.push(String(row.id));
+        if (invId) legacyPerInvoiceIds.push(String(row.id));
+        else existingAggregatedId = String(row.id);
       }
 
       // If no QBO connection, close any open alerts of this type.
@@ -166,22 +167,7 @@ export async function GET(req: Request) {
         url: string;
       }>;
 
-      // Close legacy aggregated alert(s)
-      if (legacyAggregatedIds.length > 0) {
-        const { error: closeLegacyErr } = await supabase
-          .from("alerts")
-          .update({ status: "closed" })
-          .in("id", legacyAggregatedIds);
-
-        if (closeLegacyErr) {
-          return NextResponse.json(
-            { ok: false, stage: "close_legacy_aggregated", error: closeLegacyErr.message },
-            { status: 500 }
-          );
-        }
-      }
-
-      // If healthy, close any open per-invoice alerts.
+      // If healthy, close any open alerts of this type (both aggregated and legacy per-invoice).
       if (overdue.length === 0) {
         const idsToClose = (openAlerts || []).map((r: any) => String(r.id));
         if (idsToClose.length > 0) {
@@ -200,75 +186,96 @@ export async function GET(req: Request) {
         continue;
       }
 
-      // Close stale invoice alerts (no longer overdue)
-      const currentInvoiceIds = new Set(overdue.map((x) => x.invoiceId));
-      const openInvoiceIds = new Set(openByInvoiceId.keys());
-
-      const staleToClose: string[] = [];
-      for (const invId of openInvoiceIds) {
-        if (!currentInvoiceIds.has(invId)) {
-          const row = openByInvoiceId.get(invId);
-          if (row?.id) staleToClose.push(row.id);
-        }
-      }
-
-      if (staleToClose.length > 0) {
-        const { error: closeStaleErr } = await supabase
+      // We are now pattern-based: close any legacy per-invoice open alerts.
+      if (legacyPerInvoiceIds.length > 0) {
+        const { error: closeLegacyPerInvErr } = await supabase
           .from("alerts")
           .update({ status: "closed" })
-          .in("id", staleToClose);
+          .in("id", legacyPerInvoiceIds);
 
-        if (closeStaleErr) {
+        if (closeLegacyPerInvErr) {
           return NextResponse.json(
-            { ok: false, stage: "close_stale_invoice_alerts", error: closeStaleErr.message },
+            { ok: false, stage: "close_legacy_per_invoice", error: closeLegacyPerInvErr.message },
             { status: 500 }
           );
         }
       }
 
-      // Upsert each overdue invoice alert
-      for (const inv0 of overdue) {
-        const invoiceId = inv0.invoiceId;
+      const totalAtRiskCents = overdue.reduce((sum, x) => sum + (x.balanceCents || 0), 0);
 
-        const payload: any = {
-          customer_id: customerId,
-          type: alertType,
-          message: `Overdue invoice in QuickBooks (${inv0.docNumber || invoiceId}).`,
-          status: "open",
-          amount_at_risk: inv0.balanceCents,
-          source_system: sourceSystem,
-          primary_entity_type: "invoice",
-          primary_entity_id: invoiceId,
-          context: {
-            invoice: inv0,
-            url: inv0.url,
-            computed_at: new Date().toISOString(),
-          },
-          confidence: null,
-          confidence_reason: null,
-          expected_amount_cents: null,
-          observed_amount_cents: null,
-          expected_at: null,
-          observed_at: null,
-        };
+      const worst = overdue
+        .slice()
+        .sort((a, b) => (b.balanceCents || 0) - (a.balanceCents || 0))[0];
 
-        const existing = openByInvoiceId.get(invoiceId);
-        if (existing?.id) {
-          const { error: updErr } = await supabase.from("alerts").update(payload).eq("id", existing.id);
-          if (updErr) {
-            return NextResponse.json(
-              { ok: false, stage: "update_invoice_alert", invoiceId, error: updErr.message },
-              { status: 500 }
-            );
-          }
-        } else {
-          const { error: insErr } = await supabase.from("alerts").insert(payload);
-          if (insErr) {
-            return NextResponse.json(
-              { ok: false, stage: "insert_invoice_alert", invoiceId, error: insErr.message },
-              { status: 500 }
-            );
-          }
+      const baseUrl = qboBaseHost(env);
+
+      const context = {
+        source: "quickbooks",
+        count: overdue.length,
+        total_at_risk_cents: totalAtRiskCents,
+        worst_invoice: worst
+          ? {
+              invoiceId: worst.invoiceId,
+              docNumber: worst.docNumber ?? null,
+              dueDate: worst.dueDate ?? null,
+              balanceCents: worst.balanceCents,
+              url: worst.url,
+            }
+          : null,
+        invoices: overdue
+          .slice()
+          .sort((a, b) => (b.balanceCents || 0) - (a.balanceCents || 0))
+          .slice(0, 25)
+          .map((x) => ({
+            invoiceId: x.invoiceId,
+            docNumber: x.docNumber ?? null,
+            dueDate: x.dueDate ?? null,
+            balanceCents: x.balanceCents,
+            url: x.url,
+          })),
+        url: baseUrl,
+        computed_at: new Date().toISOString(),
+      };
+
+      const message =
+        overdue.length === 1
+          ? "1 overdue invoice in QuickBooks."
+          : `${overdue.length} overdue invoices in QuickBooks.`;
+
+      const payload: any = {
+        customer_id: customerId,
+        type: alertType,
+        message,
+        status: "open",
+        amount_at_risk: totalAtRiskCents,
+        source_system: sourceSystem,
+        // Pattern-based: no single primary entity.
+        primary_entity_type: "receivables",
+        primary_entity_id: null,
+        context,
+        confidence: null,
+        confidence_reason: null,
+        expected_amount_cents: null,
+        observed_amount_cents: null,
+        expected_at: null,
+        observed_at: null,
+      };
+
+      if (existingAggregatedId) {
+        const { error: updErr } = await supabase.from("alerts").update(payload).eq("id", existingAggregatedId);
+        if (updErr) {
+          return NextResponse.json(
+            { ok: false, stage: "update_aggregated_alert", error: updErr.message },
+            { status: 500 }
+          );
+        }
+      } else {
+        const { error: insErr } = await supabase.from("alerts").insert(payload);
+        if (insErr) {
+          return NextResponse.json(
+            { ok: false, stage: "insert_aggregated_alert", error: insErr.message },
+            { status: 500 }
+          );
         }
       }
     }
