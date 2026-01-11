@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 type SortKey = "urgency" | "recent";
 
 const LABELS: Record<SortKey, string> = {
-  urgency: "Urgency",
+  urgency: "Severity",
   recent: "Most recent",
 };
 
@@ -19,7 +19,6 @@ export default function AlertViewSelect() {
 
   function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const next = e.target.value as SortKey;
-
     const params = new URLSearchParams(searchParams.toString());
 
     // default sort: keep URL clean (no ?sort=)

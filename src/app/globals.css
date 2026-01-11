@@ -44,6 +44,9 @@
   --ops-sev-medium: #0f766e;
   --ops-sev-medium-bg: rgba(15, 118, 110, 0.18);
 
+  --ops-sev-low: #64748b;
+  --ops-sev-low-bg: rgba(100, 116, 139, 0.12);
+
   /* =========================
      CTA tokens (dark default)
      ========================= */
