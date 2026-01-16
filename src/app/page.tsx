@@ -17,7 +17,7 @@ import {
 export const dynamic = "force-dynamic";
 
 // Alpha scope: ONLY show Notion + QuickBooks alerts on Attention page.
-const ALPHA_ALLOWED_ALERT_TYPES = new Set<string>(["notion_stale", "qbo_overdue_invoice"]);
+const ALPHA_ALLOWED_ALERT_TYPES = new Set<string>(["notion_stale_activity", "qbo_overdue_invoice"]);
 
 type SortKey = "urgency" | "recent";
 
