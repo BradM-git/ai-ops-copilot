@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
     const supabase = supabaseAdmin();
 
-    // Only run for active customers (matches your current cleanup direction).
+    // Only run for active customers.
     const { data: customers, error: custErr } = await supabase
       .from("customers")
       .select("id")
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
     const alertType = "notion_stale_activity";
     const sourceSystem = "notion";
 
-    // This reads Notion live using env vars (NOTION_DB_OPPS / OPS / INTERNAL_PROJECTS).
+    // Reads Notion live using NOTION_DB_MAIN.
     const summary = await getNotionStaleActivitySummary();
 
     const total = Number(summary?.total ?? 0);
@@ -117,7 +117,7 @@ export async function GET(req: Request) {
         primary_entity_id: customerId,
         context,
         confidence: "medium",
-        confidence_reason: "items exceed inactivity thresholds by status bucket",
+        confidence_reason: "items have not been edited within the stale threshold window",
         expected_amount_cents: null,
         observed_amount_cents: null,
         expected_at: null,
