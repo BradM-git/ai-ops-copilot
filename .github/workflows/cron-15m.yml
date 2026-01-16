@@ -12,6 +12,6 @@ jobs:
       - name: Call cron endpoint
         run: |
           echo "CRON_BASE_URL host: $(echo '${{ secrets.CRON_BASE_URL }}' | sed -E 's#https?://([^/]+).*#\1#')"
-          curl -sS -X GET "${{ secrets.CRON_BASE_URL }}/api/logic/alerts/notion-stale-activity" \
+          curl -sS -X GET "${{ secrets.CRON_BASE_URL }}/api/cron/daily" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
             -H "authorization: Bearer ${{ secrets.CRON_SECRET }}"
