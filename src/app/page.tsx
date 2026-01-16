@@ -1,12 +1,11 @@
 // src/app/page.tsx
 import { supabaseServer } from "@/lib/supabaseServer";
 import { getCurrentCustomerId } from "@/lib/currentCustomer";
-import CloseAlertButton from "@/components/CloseAlertButton";
-import OpenPlatformLink from "@/components/OpenPlatformLink";
 import AlertViewSelect from "@/components/AlertViewSelect";
+import AlertRow from "@/components/AlertRow";
 import {
   presentAlert,
-  type AlertRow,
+  type AlertRow as AlertRowType,
   type CustomerRow,
   type ExpectedRevenueRow,
   type InvoiceRow,
@@ -64,7 +63,7 @@ function toMs(iso: string) {
 }
 
 function getOpenCta(
-  alert: AlertRow,
+  alert: AlertRowType,
   _customer: CustomerRow | null
 ): { platform: string; href: string } | null {
   const system = (alert.source_system || "").toLowerCase();
@@ -154,7 +153,7 @@ export default async function Page(props: {
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false });
 
-  const alerts = (alertsRaw || []) as AlertRow[];
+  const alerts = (alertsRaw || []) as AlertRowType[];
 
   const openAlerts = alerts.filter((a) => {
     const src = (a.source_system || "").toLowerCase();
@@ -204,7 +203,6 @@ export default async function Page(props: {
 
   return (
     <div>
-      {/* Keep existing layout; only re-add the Sort control */}
       <div className="mb-3 flex items-center justify-end">
         <AlertViewSelect />
       </div>
@@ -225,94 +223,24 @@ export default async function Page(props: {
             const customerLabel = customer?.name || customer?.email || "Customer";
             const money = fmtMoney(alert.amount_at_risk);
             const collapsedCta = getOpenCta(alert, customer);
-            const rowClickable = Boolean(collapsedCta?.href);
 
             return (
-              <div
+              <AlertRow
                 key={alert.id}
-                className={`group ${sevCls.rail} ${idx === 0 ? "" : "border-t border-t-[var(--ops-border)]"}`}
-              >
-                <div
-                  className={[
-                    "flex items-center gap-3 px-4 py-3",
-                    rowClickable ? "cursor-pointer hover:bg-[var(--ops-hover)]" : "",
-                  ].join(" ")}
-                  role={rowClickable ? "link" : undefined}
-                  tabIndex={rowClickable ? 0 : -1}
-                  onClick={() => {
-                    if (!collapsedCta?.href) return;
-                    // Open in new tab (Option A)
-                    // NOTE: this is server component output; onclick runs client-side fine.
-                    window.open(collapsedCta.href, "_blank", "noopener,noreferrer");
-                  }}
-                  onKeyDown={(e) => {
-                    if (!collapsedCta?.href) return;
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      window.open(collapsedCta.href, "_blank", "noopener,noreferrer");
-                    }
-                  }}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="truncate text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-                        {presentation.domainLabel} · {customerLabel}
-                      </div>
-
-                      <span
-                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${sevCls.badge} ${sevCls.badgeText}`}
-                      >
-                        {sevLabel}
-                      </span>
-
-                      {money ? (
-                        <span className="text-xs text-[var(--ops-text-muted)]">{money} at risk</span>
-                      ) : null}
-                    </div>
-
-                    {/* Primary line (prominent): message */}
-                    <div className="mt-1 truncate text-sm font-semibold text-[var(--ops-text)]">
-                      {presentation.title}
-                    </div>
-
-                    {/* Secondary line: optional, keep short */}
-                    {presentation.summary ? (
-                      <div className="mt-0.5 truncate text-sm text-[var(--ops-text-muted)]">
-                        {presentation.summary}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {/* Actions: keep but prevent row click */}
-                  <div className="flex shrink-0 items-center gap-3">
-                    {collapsedCta ? (
-                      <div
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                        }}
-                      >
-                        <OpenPlatformLink href={collapsedCta.href} label={`Open in ${collapsedCta.platform}`} />
-                      </div>
-                    ) : null}
-
-                    <div
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                      }}
-                    >
-                      <CloseAlertButton alertId={alert.id} />
-                    </div>
-                  </div>
-                </div>
-              </div>
+                idx={idx}
+                isFirstRow={idx === 0}
+                railClassName={sevCls.rail}
+                alertId={alert.id}
+                href={collapsedCta?.href ?? null}
+                openLabel={collapsedCta ? `Open in ${collapsedCta.platform}` : null}
+                domainLabel={presentation.domainLabel}
+                customerLabel={customerLabel}
+                severityBadgeClassName={`${sevCls.badge} ${sevCls.badgeText}`}
+                severityLabel={sevLabel}
+                moneyLabel={money ? `${money} at risk` : null}
+                title={presentation.title}
+                summary={presentation.summary || null}
+              />
             );
           })}
         </div>
