@@ -8,11 +8,9 @@ export default function CloseAlertButton({ alertId }: { alertId: string }) {
   const [done, setDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function onClose(e?: React.MouseEvent<HTMLButtonElement>) {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
+  async function onClose(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.stopPropagation();
 
     if (loading || done) return;
 
@@ -36,19 +34,31 @@ export default function CloseAlertButton({ alertId }: { alertId: string }) {
     }
   }
 
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={onClose}
-        disabled={loading || done}
-        className="ops-cta-primary text-xs font-semibold disabled:opacity-60"
-        title="Dismiss this alert (use only if this is not actually an issue). Prefer letting items auto-resolve."
-      >
-        {done ? "Noted" : loading ? "Saving…" : "Dismiss"}
-      </button>
+  if (done) return null;
 
-      {err ? <span className="text-xs text-[var(--ops-sev-critical)]">{err}</span> : null}
-    </div>
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      disabled={loading}
+      aria-label="Dismiss alert"
+      title="Dismiss alert"
+      className="
+        cursor-pointer
+        rounded
+        p-1
+        text-sm
+        font-normal
+        leading-none
+        text-[var(--ops-text-muted)]
+        hover:text-[var(--ops-text)]
+        hover:bg-[var(--ops-hover)]
+        disabled:opacity-40
+        disabled:cursor-not-allowed
+      "
+    >
+      {loading ? "…" : "×"}
+      {err ? <span className="sr-only">{err}</span> : null}
+    </button>
   );
 }

@@ -1,7 +1,6 @@
 // src/app/page.tsx
 import { supabaseServer } from "@/lib/supabaseServer";
 import { getCurrentCustomerId } from "@/lib/currentCustomer";
-import AlertViewSelect from "@/components/AlertViewSelect";
 import Alert from "@/components/Alert";
 import {
   presentAlert,
@@ -17,12 +16,6 @@ export const dynamic = "force-dynamic";
 
 // Alpha scope: ONLY show Notion + QuickBooks alerts on Attention page.
 const ALPHA_ALLOWED_ALERT_TYPES = new Set<string>(["notion_stale_activity", "qbo_overdue_invoice"]);
-
-type SortKey = "urgency" | "recent";
-
-function parseSortKey(x: unknown): SortKey {
-  return x === "recent" ? "recent" : "urgency";
-}
 
 function severityFromScore(score: number): Severity {
   if (score >= 90) return "critical";
@@ -97,12 +90,7 @@ function fmtMoney(cents: number | null) {
   });
 }
 
-export default async function Page(props: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const sp = (await props.searchParams) ?? {};
-  const sortKey = parseSortKey(Array.isArray(sp.sort) ? sp.sort[0] : sp.sort);
-
+export default async function Page() {
   const supabase = await supabaseServer();
 
   let customerId: string | null = null;
@@ -186,27 +174,15 @@ export default async function Page(props: {
     return { alert: a, customer, presentation: final, severity: sev };
   });
 
-  // Sort by: Urgency or Recent
-  if (sortKey === "recent") {
-    presented = presented.sort((x, y) => {
-      const dt = toMs(y.alert.created_at) - toMs(x.alert.created_at);
-      if (dt !== 0) return dt;
-      return (y.presentation.score ?? 0) - (x.presentation.score ?? 0);
-    });
-  } else {
-    presented = presented.sort((x, y) => {
-      const ds = (y.presentation.score ?? 0) - (x.presentation.score ?? 0);
-      if (ds !== 0) return ds;
-      return toMs(y.alert.created_at) - toMs(x.alert.created_at);
-    });
-  }
+  // Urgency-only ordering (no sort UI)
+  presented = presented.sort((x, y) => {
+    const ds = (y.presentation.score ?? 0) - (x.presentation.score ?? 0);
+    if (ds !== 0) return ds;
+    return toMs(y.alert.created_at) - toMs(x.alert.created_at);
+  });
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-end">
-        <AlertViewSelect />
-      </div>
-
       {presented.length === 0 ? (
         <div className="rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-6">
           <div className="text-sm font-semibold text-[var(--ops-text)]">No attention items.</div>
@@ -229,7 +205,6 @@ export default async function Page(props: {
                 key={alert.id}
                 alertId={alert.id}
                 href={cta?.href ?? null}
-                openLabel={cta ? `Open in ${cta.platform}` : null}
                 railClassName={sevCls.rail}
                 isFirstRow={idx === 0}
                 domainLabel={presentation.domainLabel}
