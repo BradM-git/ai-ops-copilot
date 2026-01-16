@@ -3,26 +3,28 @@
 import CloseAlertButton from "@/components/CloseAlertButton";
 import OpenPlatformLink from "@/components/OpenPlatformLink";
 
-export default function AlertRow(props: {
+export default function Alert(props: {
   alertId: string;
+
+  // click-through (Option A)
   href: string | null;
   openLabel: string | null;
 
-  idx: number;
-
+  // styling / grouping
   railClassName: string;
   isFirstRow: boolean;
 
+  // content
   domainLabel: string;
   customerLabel: string;
 
-  severityBadgeClassName: string;
-  severityLabel: string;
+  severityBadgeClassName: string; // already includes bg + text classes
+  severityLabel: string; // "Critical" | "High" | "Medium" | "Low" (currently only first 3 used)
 
   moneyLabel: string | null;
 
-  title: string;
-  summary: string | null;
+  title: string; // primary message
+  summary: string | null; // secondary (optional)
 }) {
   const {
     alertId,
@@ -47,9 +49,7 @@ export default function AlertRow(props: {
   }
 
   return (
-    <div
-      className={`group ${railClassName} ${isFirstRow ? "" : "border-t border-t-[var(--ops-border)]"}`}
-    >
+    <div className={`group ${railClassName} ${isFirstRow ? "" : "border-t border-t-[var(--ops-border)]"}`}>
       <div
         className={[
           "flex items-center gap-3 px-4 py-3",
@@ -72,19 +72,20 @@ export default function AlertRow(props: {
               {domainLabel} · {customerLabel}
             </div>
 
-            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${severityBadgeClassName}`}>
+            <span
+              className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${severityBadgeClassName}`}
+              title="Urgency"
+            >
               {severityLabel}
             </span>
 
-            {moneyLabel ? (
-              <span className="text-xs text-[var(--ops-text-muted)]">{moneyLabel}</span>
-            ) : null}
+            {moneyLabel ? <span className="text-xs text-[var(--ops-text-muted)]">{moneyLabel}</span> : null}
           </div>
 
           {/* Primary line */}
           <div className="mt-1 truncate text-sm font-semibold text-[var(--ops-text)]">{title}</div>
 
-          {/* Secondary line (optional) */}
+          {/* Secondary line */}
           {summary ? (
             <div className="mt-0.5 truncate text-sm text-[var(--ops-text-muted)]">{summary}</div>
           ) : null}

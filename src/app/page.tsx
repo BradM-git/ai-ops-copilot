@@ -2,7 +2,7 @@
 import { supabaseServer } from "@/lib/supabaseServer";
 import { getCurrentCustomerId } from "@/lib/currentCustomer";
 import AlertViewSelect from "@/components/AlertViewSelect";
-import AlertRow from "@/components/AlertRow";
+import Alert from "@/components/Alert";
 import {
   presentAlert,
   type AlertRow as AlertRowType,
@@ -186,7 +186,7 @@ export default async function Page(props: {
     return { alert: a, customer, presentation: final, severity: sev };
   });
 
-  // Restore sort behavior (Sort by: Urgency or Recent)
+  // Sort by: Urgency or Recent
   if (sortKey === "recent") {
     presented = presented.sort((x, y) => {
       const dt = toMs(y.alert.created_at) - toMs(x.alert.created_at);
@@ -222,17 +222,16 @@ export default async function Page(props: {
 
             const customerLabel = customer?.name || customer?.email || "Customer";
             const money = fmtMoney(alert.amount_at_risk);
-            const collapsedCta = getOpenCta(alert, customer);
+            const cta = getOpenCta(alert, customer);
 
             return (
-              <AlertRow
+              <Alert
                 key={alert.id}
-                idx={idx}
-                isFirstRow={idx === 0}
-                railClassName={sevCls.rail}
                 alertId={alert.id}
-                href={collapsedCta?.href ?? null}
-                openLabel={collapsedCta ? `Open in ${collapsedCta.platform}` : null}
+                href={cta?.href ?? null}
+                openLabel={cta ? `Open in ${cta.platform}` : null}
+                railClassName={sevCls.rail}
+                isFirstRow={idx === 0}
                 domainLabel={presentation.domainLabel}
                 customerLabel={customerLabel}
                 severityBadgeClassName={`${sevCls.badge} ${sevCls.badgeText}`}
