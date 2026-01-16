@@ -81,13 +81,15 @@ function getOpenCta(
   return { platform: system, href: urlFromContext || "https://www.google.com" };
 }
 
-function fmtMoney(cents: number | null) {
-  if (!cents) return null;
-  return (cents / 100).toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
+function issueSummaryFor(alert: AlertRowType): string {
+  switch (alert.type) {
+    case "qbo_overdue_invoice":
+      return "Overdue invoices";
+    case "notion_stale_activity":
+      return "Possible stalled project tasks";
+    default:
+      return "Needs attention";
+  }
 }
 
 export default async function Page() {
@@ -196,9 +198,13 @@ export default async function Page() {
             const sevCls = severityRowClasses(severity);
             const sevLabel = severity === "critical" ? "Critical" : severity === "high" ? "High" : "Medium";
 
-            const customerLabel = customer?.name || customer?.email || "Customer";
-            const money = fmtMoney(alert.amount_at_risk);
             const cta = getOpenCta(alert, customer);
+
+            const integrationName = presentation.domainLabel;
+            const issueSummary = issueSummaryFor(alert);
+
+            // Use summary as the "issue specifics" if present; otherwise fall back to title.
+            const issueSpecifics = (presentation.summary || presentation.title || "").trim();
 
             return (
               <Alert
@@ -207,13 +213,11 @@ export default async function Page() {
                 href={cta?.href ?? null}
                 railClassName={sevCls.rail}
                 isFirstRow={idx === 0}
-                domainLabel={presentation.domainLabel}
-                customerLabel={customerLabel}
+                integrationName={integrationName}
+                issueSummary={issueSummary}
                 severityBadgeClassName={`${sevCls.badge} ${sevCls.badgeText}`}
                 severityLabel={sevLabel}
-                moneyLabel={money ? `${money} at risk` : null}
-                title={presentation.title}
-                summary={presentation.summary || null}
+                issueSpecifics={issueSpecifics}
               />
             );
           })}

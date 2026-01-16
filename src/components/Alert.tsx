@@ -1,44 +1,34 @@
 "use client";
 
 import CloseAlertButton from "@/components/CloseAlertButton";
-import OpenPlatformLink from "@/components/OpenPlatformLink";
 
 export default function Alert(props: {
   alertId: string;
 
   // click-through (Option A)
   href: string | null;
-  openLabel: string | null;
 
   // styling / grouping
   railClassName: string;
   isFirstRow: boolean;
 
-  // content
-  domainLabel: string;
-  customerLabel: string;
-
-  severityBadgeClassName: string; // already includes bg + text classes
-  severityLabel: string; // "Critical" | "High" | "Medium" | "Low" (currently only first 3 used)
-
-  moneyLabel: string | null;
-
-  title: string; // primary message
-  summary: string | null; // secondary (optional)
+  // content (2 rows only)
+  integrationName: string; // e.g. "QuickBooks", "Notion"
+  issueSummary: string; // e.g. "Overdue invoices"
+  severityBadgeClassName: string; // bg + text classes
+  severityLabel: string; // "Critical" | "High" | "Medium" | "Low"
+  issueSpecifics: string; // e.g. "7 invoices - $2,032 outstanding - 57 d overdue (max)"
 }) {
   const {
     alertId,
     href,
-    openLabel,
     railClassName,
     isFirstRow,
-    domainLabel,
-    customerLabel,
+    integrationName,
+    issueSummary,
     severityBadgeClassName,
     severityLabel,
-    moneyLabel,
-    title,
-    summary,
+    issueSpecifics,
   } = props;
 
   const rowClickable = Boolean(href);
@@ -49,11 +39,32 @@ export default function Alert(props: {
   }
 
   return (
-    <div className={`group ${railClassName} ${isFirstRow ? "" : "border-t border-t-[var(--ops-border)]"}`}>
+    <div
+      className={`relative group ${railClassName} ${
+        isFirstRow ? "" : "border-t border-t-[var(--ops-border)]"
+      } ${rowClickable ? "cursor-pointer" : ""}`}
+    >
+      {/* Subtle dismiss X (secondary) */}
+      <div
+        className="absolute right-3 top-3 z-10 opacity-50 transition-opacity group-hover:opacity-100"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+        }}
+        aria-label="Dismiss alert"
+        title="Dismiss"
+      >
+        <CloseAlertButton alertId={alertId} />
+      </div>
+
+      {/* Clickable row */}
       <div
         className={[
           "flex items-center gap-3 px-4 py-3",
-          rowClickable ? "cursor-pointer hover:bg-[var(--ops-hover)]" : "",
+          rowClickable ? "hover:bg-[var(--ops-hover)] cursor-pointer" : "",
         ].join(" ")}
         role={rowClickable ? "link" : undefined}
         tabIndex={rowClickable ? 0 : -1}
@@ -66,10 +77,11 @@ export default function Alert(props: {
           }
         }}
       >
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 pr-8">
+          {/* Row 1: Integration - Issue Summary - Severity */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="truncate text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-              {domainLabel} · {customerLabel}
+            <div className="truncate text-sm font-semibold text-[var(--ops-text)]">
+              {integrationName} — {issueSummary}
             </div>
 
             <span
@@ -78,46 +90,10 @@ export default function Alert(props: {
             >
               {severityLabel}
             </span>
-
-            {moneyLabel ? <span className="text-xs text-[var(--ops-text-muted)]">{moneyLabel}</span> : null}
           </div>
 
-          {/* Primary line */}
-          <div className="mt-1 truncate text-sm font-semibold text-[var(--ops-text)]">{title}</div>
-
-          {/* Secondary line */}
-          {summary ? (
-            <div className="mt-0.5 truncate text-sm text-[var(--ops-text-muted)]">{summary}</div>
-          ) : null}
-        </div>
-
-        {/* Actions: prevent row click */}
-        <div className="flex shrink-0 items-center gap-3">
-          {href && openLabel ? (
-            <div
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-              }}
-            >
-              <OpenPlatformLink href={href} label={openLabel} />
-            </div>
-          ) : null}
-
-          <div
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-            }}
-          >
-            <CloseAlertButton alertId={alertId} />
-          </div>
+          {/* Row 2: Issue specifics */}
+          <div className="mt-1 truncate text-sm text-[var(--ops-text-muted)]">{issueSpecifics}</div>
         </div>
       </div>
     </div>
