@@ -78,7 +78,24 @@ function getOpenCta(
     return { platform: "QuickBooks", href: urlFromContext || "https://qbo.intuit.com/" };
   }
 
+  if (system === "hubspot") {
+    return { platform: "HubSpot", href: urlFromContext || "https://app.hubspot.com/" };
+  }
+
   return { platform: system, href: urlFromContext || "https://www.google.com" };
+}
+
+function integrationLabel(alert: AlertRowType): string {
+  switch ((alert.source_system || "").toLowerCase()) {
+    case "quickbooks":
+      return "QuickBooks";
+    case "notion":
+      return "Notion";
+    case "hubspot":
+      return "HubSpot";
+    default:
+      return "Integration";
+  }
 }
 
 function issueSummaryFor(alert: AlertRowType): string {
@@ -87,9 +104,62 @@ function issueSummaryFor(alert: AlertRowType): string {
       return "Overdue invoices";
     case "notion_stale_activity":
       return "Possible stalled project tasks";
+    // Future: HubSpot types
+    case "hubspot_deals_stalled":
+      return "Deals stalled after activity";
+    case "hubspot_late_stage_idle":
+      return "Late-stage deals idle";
+    // Future: QB/Notion add-ons (placeholders for module alignment)
+    case "qbo_invoices_due_to_send":
+      return "Invoices due to be sent";
+    case "notion_stale_past_due":
+      return "Tasks overdue and inactive";
     default:
       return "Needs attention";
   }
+}
+
+function SupportedToolsModule() {
+  return (
+    <div className="mt-6 rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-4">
+      <div className="text-sm font-semibold text-[var(--ops-text)]">Supported tools & alerts</div>
+      <div className="mt-1 text-sm text-[var(--ops-text-muted)]">
+        Alpha scope is intentionally small. These are the only alert types we currently support.
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
+            QuickBooks
+          </div>
+          <ul className="mt-2 space-y-1 text-sm text-[var(--ops-text-muted)]">
+            <li>• Overdue invoices</li>
+            <li>• Invoices due to be sent</li>
+          </ul>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
+            Notion
+          </div>
+          <ul className="mt-2 space-y-1 text-sm text-[var(--ops-text-muted)]">
+            <li>• Possible stalled project tasks</li>
+            <li>• Tasks overdue and inactive</li>
+          </ul>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
+            HubSpot
+          </div>
+          <ul className="mt-2 space-y-1 text-sm text-[var(--ops-text-muted)]">
+            <li>• Deals stalled after activity</li>
+            <li>• Late-stage deals idle</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default async function Page() {
@@ -200,10 +270,10 @@ export default async function Page() {
 
             const cta = getOpenCta(alert, customer);
 
-            const integrationName = presentation.domainLabel;
+            const integrationName = integrationLabel(alert);
             const issueSummary = issueSummaryFor(alert);
 
-            // Use summary as the "issue specifics" if present; otherwise fall back to title.
+            // 2nd line: issue specifics. Prefer summary; fallback to title.
             const issueSpecifics = (presentation.summary || presentation.title || "").trim();
 
             return (
@@ -223,6 +293,8 @@ export default async function Page() {
           })}
         </div>
       )}
+
+      <SupportedToolsModule />
     </div>
   );
 }
