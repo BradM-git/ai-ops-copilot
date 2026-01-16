@@ -24,11 +24,23 @@ function pageTitle(p: any): string | null {
   return null;
 }
 
+async function databaseIdToDataSourceId(notion: any, databaseId: string): Promise<string> {
+  const db = await notion.databases.retrieve({ database_id: databaseId });
+  const dsId =
+    db?.data_sources?.[0]?.id ??
+    db?.data_sources?.[0]?.data_source_id ??
+    (db as any)?.data_source_id ??
+    null;
+
+  if (!dsId) throw new Error("Could not resolve data_source_id from database_id");
+  return dsId;
+}
+
 /**
  * Single-DB stale activity summary.
  * - Env: NOTION_DB_MAIN
  * - Stale condition: last_edited_time before (now - thresholdDays)
- * - Aggregated output (one dataset)
+ * - Uses dataSources.query (matches existing Notion integration style in this codebase)
  */
 export async function getNotionStaleActivitySummary() {
   const notion: any = getNotion();
@@ -41,12 +53,13 @@ export async function getNotionStaleActivitySummary() {
     });
   }
 
-  // Keep this dead simple. If you want a different number later, change this constant.
   const thresholdDays = 7;
   const beforeIso = daysAgoIso(thresholdDays);
 
-  const res = await notion.databases.query({
-    database_id: databaseId,
+  const dataSourceId = await databaseIdToDataSourceId(notion, databaseId);
+
+  const res = await notion.dataSources.query({
+    data_source_id: dataSourceId,
     filter: {
       timestamp: "last_edited_time",
       last_edited_time: { before: beforeIso },
@@ -66,6 +79,7 @@ export async function getNotionStaleActivitySummary() {
     database: {
       label: "Notion Main Database",
       databaseId,
+      dataSourceId,
       thresholdDays,
       beforeIso,
       items,
