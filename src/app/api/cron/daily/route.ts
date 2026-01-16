@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     const paths = [
       "/api/logic/customer-defaults",
       "/api/logic/alerts/missed",
-      "/api/logic/alerts/notion-stale",
+      "/api/logic/alerts/notion-stale-activity",
       ...(hasQboConfig() ? ["/api/logic/alerts/qbo-overdue-invoices"] : []),
       "/api/logic/alerts/suppress-inactive",
     ];
