@@ -224,85 +224,95 @@ export default async function Page(props: {
 
             const customerLabel = customer?.name || customer?.email || "Customer";
             const money = fmtMoney(alert.amount_at_risk);
-
             const collapsedCta = getOpenCta(alert, customer);
+            const rowClickable = Boolean(collapsedCta?.href);
 
             return (
-              <details
+              <div
                 key={alert.id}
-                className={`group overflow-hidden rounded-l-xl ${sevCls.rail} ${
-                  idx === 0 ? "" : "border-t border-t-[var(--ops-border)]"
-                }`}
+                className={`group ${sevCls.rail} ${idx === 0 ? "" : "border-t border-t-[var(--ops-border)]"}`}
               >
-                <summary className="list-none cursor-pointer">
-                  <div className="flex items-center gap-3 px-4 py-2 hover:bg-[var(--ops-hover)]">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="truncate text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-                          {presentation.domainLabel} · {customerLabel}
-                        </div>
-
-                        <span
-                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${sevCls.badge} ${sevCls.badgeText}`}
-                        >
-                          {sevLabel}
-                        </span>
-
-                        {money ? (
-                          <span className="text-xs text-[var(--ops-text-muted)]">{money} at risk</span>
-                        ) : null}
+                <div
+                  className={[
+                    "flex items-center gap-3 px-4 py-3",
+                    rowClickable ? "cursor-pointer hover:bg-[var(--ops-hover)]" : "",
+                  ].join(" ")}
+                  role={rowClickable ? "link" : undefined}
+                  tabIndex={rowClickable ? 0 : -1}
+                  onClick={() => {
+                    if (!collapsedCta?.href) return;
+                    // Open in new tab (Option A)
+                    // NOTE: this is server component output; onclick runs client-side fine.
+                    window.open(collapsedCta.href, "_blank", "noopener,noreferrer");
+                  }}
+                  onKeyDown={(e) => {
+                    if (!collapsedCta?.href) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      window.open(collapsedCta.href, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="truncate text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
+                        {presentation.domainLabel} · {customerLabel}
                       </div>
 
-                      <div className="mt-1 truncate text-sm font-semibold text-[var(--ops-text)]">
-                        {presentation.title}
-                      </div>
+                      <span
+                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${sevCls.badge} ${sevCls.badgeText}`}
+                      >
+                        {sevLabel}
+                      </span>
+
+                      {money ? (
+                        <span className="text-xs text-[var(--ops-text-muted)]">{money} at risk</span>
+                      ) : null}
+                    </div>
+
+                    {/* Primary line (prominent): message */}
+                    <div className="mt-1 truncate text-sm font-semibold text-[var(--ops-text)]">
+                      {presentation.title}
+                    </div>
+
+                    {/* Secondary line: optional, keep short */}
+                    {presentation.summary ? (
                       <div className="mt-0.5 truncate text-sm text-[var(--ops-text-muted)]">
                         {presentation.summary}
                       </div>
-                    </div>
+                    ) : null}
+                  </div>
 
-                    <div className="flex shrink-0 items-center gap-3">
-                      {collapsedCta ? (
+                  {/* Actions: keep but prevent row click */}
+                  <div className="flex shrink-0 items-center gap-3">
+                    {collapsedCta ? (
+                      <div
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
                         <OpenPlatformLink href={collapsedCta.href} label={`Open in ${collapsedCta.platform}`} />
-                      ) : null}
+                      </div>
+                    ) : null}
 
+                    <div
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                      }}
+                    >
                       <CloseAlertButton alertId={alert.id} />
                     </div>
                   </div>
-                </summary>
-
-                <div className="border-t border-t-[var(--ops-border)] bg-[var(--ops-surface)] px-4 py-4">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-                        Expectation
-                      </div>
-                      <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.expectation}</div>
-                    </div>
-
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-                        Observation
-                      </div>
-                      <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.observation}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-                      Drift
-                    </div>
-                    <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.drift}</div>
-                  </div>
-
-                  <div className="mt-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ops-text-faint)]">
-                      Next step
-                    </div>
-                    <div className="mt-2 text-sm text-[var(--ops-text)]">{presentation.nextStep}</div>
-                  </div>
                 </div>
-              </details>
+              </div>
             );
           })}
         </div>
