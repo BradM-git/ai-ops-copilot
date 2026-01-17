@@ -14,22 +14,32 @@ export async function GET(req: Request) {
 
     const supabase = supabaseAdmin();
 
-    // If customer is inactive, force-disable all alerts (but do not delete them)
+    // Find inactive customers
     const { data: customers, error: custErr } = await supabase
       .from("customers")
       .select("id,is_active");
 
-    if (custErr) return NextResponse.json({ error: custErr.message }, { status: 500 });
+    if (custErr) {
+      return NextResponse.json({ ok: false, error: custErr.message }, { status: 500 });
+    }
 
-    const inactiveIds = (customers || []).filter((c) => c.is_active === false).map((c) => c.id);
+    const inactiveIds = (customers || [])
+      .filter((c: any) => c.is_active === false)
+      .map((c: any) => c.id);
 
-    if (inactiveIds.length > 0) {
-      const { error: updErr } = await supabase
-        .from("alerts")
-        .update({ is_enabled: false })
-        .in("customer_id", inactiveIds);
+    if (inactiveIds.length === 0) {
+      return NextResponse.json({ ok: true, inactive_count: 0 });
+    }
 
-      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    // Close (do not delete) any open alerts for inactive customers
+    const { error: updErr } = await supabase
+      .from("alerts")
+      .update({ status: "closed" })
+      .in("customer_id", inactiveIds)
+      .eq("status", "open");
+
+    if (updErr) {
+      return NextResponse.json({ ok: false, error: updErr.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true, inactive_count: inactiveIds.length });
