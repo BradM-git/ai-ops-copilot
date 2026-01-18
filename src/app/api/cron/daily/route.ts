@@ -1,3 +1,4 @@
+// src/app/api/cron/daily/route.ts
 import { NextResponse } from "next/server";
 import { requireCron } from "@/lib/api";
 import { createClient } from "@supabase/supabase-js";
@@ -9,12 +10,8 @@ function supabaseAdmin() {
 }
 
 function hasQboConfig() {
-  return Boolean(
-    process.env.INTUIT_CLIENT_ID &&
-      process.env.INTUIT_CLIENT_SECRET &&
-      process.env.QBO_CLIENT_ID &&
-      process.env.QBO_CLIENT_SECRET
-  );
+  // QuickBooks auth is via Intuit OAuth. QBO_* env vars are legacy and should not gate cron.
+  return Boolean(process.env.INTUIT_CLIENT_ID && process.env.INTUIT_CLIENT_SECRET);
 }
 
 export async function GET(req: Request) {
@@ -29,8 +26,19 @@ export async function GET(req: Request) {
     const paths = [
       "/api/logic/customer-defaults",
       "/api/logic/alerts/missed",
+
+      // Notion (single DB)
       "/api/logic/alerts/notion-stale-activity",
-      ...(hasQboConfig() ? ["/api/logic/alerts/qbo-overdue-invoices"] : []),
+      "/api/logic/alerts/notion-stale-past-due",
+
+      // QuickBooks
+      ...(hasQboConfig()
+        ? [
+            "/api/logic/alerts/qbo-overdue-invoices",
+            "/api/logic/alerts/qbo-invoices-due-to-send",
+          ]
+        : []),
+
       "/api/logic/alerts/suppress-inactive",
     ];
 
@@ -39,8 +47,11 @@ export async function GET(req: Request) {
       : [
           {
             path: "/api/logic/alerts/qbo-overdue-invoices",
-            reason:
-              "Skipped: missing required QBO env vars (INTUIT_CLIENT_ID/SECRET, QBO_CLIENT_ID/SECRET)",
+            reason: "Skipped: missing required Intuit env vars (INTUIT_CLIENT_ID/INTUIT_CLIENT_SECRET)",
+          },
+          {
+            path: "/api/logic/alerts/qbo-invoices-due-to-send",
+            reason: "Skipped: missing required Intuit env vars (INTUIT_CLIENT_ID/INTUIT_CLIENT_SECRET)",
           },
         ];
 

@@ -159,10 +159,7 @@ export async function ensureFreshAccessToken(
   };
 }
 
-export async function qboQuery<T = any>(
-  conn: QboAuthLike,
-  query: string
-): Promise<T> {
+export async function qboQuery<T = any>(conn: QboAuthLike, query: string): Promise<T> {
   const env: QboEnv = (conn as any).env ?? "sandbox";
   const realmId = pickRealmId(conn);
 
@@ -194,6 +191,28 @@ export async function fetchOverdueInvoices(conn: QboAuthLike) {
   const query =
     "select Id, DocNumber, CustomerRef, TotalAmt, Balance, DueDate, TxnDate " +
     "from Invoice where Balance > '0' and DueDate < CURRENT_DATE maxresults 100";
+
+  type Resp = { QueryResponse?: { Invoice?: any[] } };
+
+  const json = await qboQuery<Resp>(conn, query);
+  return json?.QueryResponse?.Invoice ?? [];
+}
+
+/**
+ * Invoices that are due to be sent (intent-based).
+ *
+ * NOTE:
+ * QBO does NOT allow filtering on EmailStatus in the WHERE clause ("EmailStatus is not queryable").
+ * So we fetch a safe superset and filter EmailStatus in application code.
+ *
+ * Superset criteria:
+ * - TotalAmt > 0
+ * - TxnDate < CURRENT_DATE (invoice date has already passed; "today" is still OK and should not alert)
+ */
+export async function fetchInvoicesDueToSend(conn: QboAuthLike) {
+  const query =
+    "select Id, DocNumber, CustomerRef, TotalAmt, Balance, DueDate, TxnDate, EmailStatus " +
+    "from Invoice where TotalAmt > '0' and TxnDate < CURRENT_DATE maxresults 100";
 
   type Resp = { QueryResponse?: { Invoice?: any[] } };
 

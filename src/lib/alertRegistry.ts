@@ -137,6 +137,112 @@ function scoreNotionStale(ctx: any): number {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * notion_stale_past_due scoring
+ *
+ * Uses:
+ * - grace_days (context.grace_days; fallback 3)
+ * - overdue_count (context.total|count|items.length)
+ * - worst_overdue_days (max days overdue among context.items due dates, if available)
+ *
+ * Shape assumptions (best-effort, backward compatible):
+ * - context.items[] may include a due date under one of these keys:
+ *   - due_date, dueDate, due, due_at, dueAt
+ *   - or nested like item.due.date / item.dueDate / item.properties?.Due Date?.date?.start (Notion raw-ish)
+ * If due dates aren’t present, scoring falls back to count + grace-only.
+ */
+function scoreNotionPastDue(ctx: any): number {
+  const graceDays = typeof ctx?.grace_days === "number" ? ctx.grace_days : 3;
+
+  const total =
+    typeof ctx?.total === "number"
+      ? ctx.total
+      : typeof ctx?.count === "number"
+        ? ctx.count
+        : Array.isArray(ctx?.items)
+          ? ctx.items.length
+          : 0;
+
+  const items: any[] = Array.isArray(ctx?.items) ? ctx.items : [];
+
+  const now = new Date();
+  const msPerDay = 1000 * 60 * 60 * 24;
+
+  const extractDueIso = (item: any): string | null => {
+    if (!item || typeof item !== "object") return null;
+
+    const direct =
+      typeof item.due_date === "string"
+        ? item.due_date
+        : typeof item.dueDate === "string"
+          ? item.dueDate
+          : typeof item.due === "string"
+            ? item.due
+            : typeof item.due_at === "string"
+              ? item.due_at
+              : typeof item.dueAt === "string"
+                ? item.dueAt
+                : null;
+
+    if (direct) return direct;
+
+    // common nested shapes
+    const nested1 = typeof item?.due?.date === "string" ? item.due.date : null;
+    if (nested1) return nested1;
+
+    const nested2 = typeof item?.due?.start === "string" ? item.due.start : null;
+    if (nested2) return nested2;
+
+    const nested3 = typeof item?.properties?.["Due Date"]?.date?.start === "string"
+      ? item.properties["Due Date"].date.start
+      : null;
+    if (nested3) return nested3;
+
+    const nested4 = typeof item?.properties?.Due?.date?.start === "string" ? item.properties.Due.date.start : null;
+    if (nested4) return nested4;
+
+    return null;
+  };
+
+  let worstOverdueDays: number | null = null;
+
+  for (const it of items) {
+    const dueIso = extractDueIso(it);
+    if (!dueIso) continue;
+
+    const due = new Date(dueIso);
+    if (isNaN(due.getTime())) continue;
+
+    const days = Math.floor((now.getTime() - due.getTime()) / msPerDay);
+    // we only care about overdue > 0
+    if (days <= 0) continue;
+
+    if (worstOverdueDays == null || days > worstOverdueDays) worstOverdueDays = days;
+  }
+
+  // Model:
+  // - base 50
+  // - +10 per overdue task (cap +30)
+  // - +5 per day beyond grace for worst overdue (cap +40)
+  // - clamp 0..100
+  let score = 50;
+
+  // count component
+  score += clamp(total, 0, 3) * 10; // 0..30
+
+  // worst overdue component (beyond grace)
+  if (worstOverdueDays != null) {
+    const beyondGrace = Math.max(0, worstOverdueDays - graceDays);
+    score += clamp(beyondGrace, 0, 8) * 5; // 0..40
+  }
+
+  return clamp(Math.round(score), 0, 100);
+}
+
 /**
  * qbo_overdue_invoice scoring
  *
@@ -236,7 +342,7 @@ export function presentAlert(params: {
   const confidenceLabel = a.confidence ? confidenceLabelFromAlert(a.confidence, a.confidence_reason) : "—";
 
   switch (a.type) {
-    case "notion_stale": {
+    case "notion_stale_activity": {
       const domainLabel = "Delivery";
 
       const ctx: any = a.context ?? {};
@@ -264,6 +370,54 @@ export function presentAlert(params: {
         "Open the stale pages and confirm whether work is happening elsewhere. If the project is paused, mark it clearly (or move it out of active views).";
 
       const score = scoreNotionStale(a.context);
+
+      return {
+        domainLabel,
+        title,
+        summary,
+        expectation,
+        observation,
+        drift,
+        nextStep,
+        confidenceLabel,
+        score,
+      };
+    }
+
+    case "notion_stale_past_due": {
+      const domainLabel = "Delivery";
+
+      const ctx: any = a.context ?? {};
+      const total =
+        typeof ctx?.total === "number"
+          ? ctx.total
+          : typeof ctx?.count === "number"
+            ? ctx.count
+            : Array.isArray(ctx?.items)
+              ? ctx.items.length
+              : 0;
+
+      const graceDays = typeof ctx?.grace_days === "number" ? ctx.grace_days : 3;
+
+      const title = "Missed task deadlines";
+      const summary =
+        total === 1
+          ? `1 task is overdue by at least ${graceDays} days.`
+          : `${total} tasks are overdue by at least ${graceDays} days.`;
+
+      const expectation = `Tasks with a due date should not slip beyond ${graceDays} days overdue.`;
+      const observation =
+        total > 0
+          ? `We found ${total} task${total === 1 ? "" : "s"} with Due Date at least ${graceDays} days in the past (and not marked Done).`
+          : "No missed task deadlines detected.";
+
+      const drift = "Missed deadlines create delivery risk and often signal that priorities or ownership need attention.";
+
+      const nextStep =
+        "Confirm the due date is still valid. If it is, assign an owner and a new committed date (or mark the task Done if it’s complete).";
+
+      // Updated: tighter scoring for missed deadlines (grace days + worst overdue age + count)
+      const score = scoreNotionPastDue(ctx);
 
       return {
         domainLabel,

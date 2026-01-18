@@ -2,103 +2,111 @@
 @import "tailwindcss";
 
 /* =========================
-   AMARGOSA THEME (DEFAULT: DARK)
+   OPS THEME (DEFAULT: LIGHT, READABILITY-FIRST)
+   Toggle dark by applying class "theme-dark" to <html>
    ========================= */
 :root {
   /* Core */
-  --ops-bg: #121212;
-  --ops-text: #ffffff;
+  --ops-bg: #f7f7f8;              /* soft neutral background */
+  --ops-text: #111827;            /* near-black for readability */
 
-  /* Brand */
-  --ops-accent: #f25c2a;
-  --ops-accent-dark: #cc461d;
-  --ops-accent-soft: #ffd3c6;
+  /* Brand / Accent (calm, high-legibility) */
+  --ops-accent: #2563eb;          /* blue-600 */
+  --ops-accent-dark: #1d4ed8;     /* blue-700 */
+  --ops-accent-soft: #dbeafe;     /* blue-100 */
 
   /* Neutrals */
-  --ops-border: rgba(255, 255, 255, 0.12);
-  --ops-border-strong: rgba(255, 255, 255, 0.18);
-  --ops-hover: rgba(255, 255, 255, 0.06);
+  --ops-border: #e5e7eb;          /* gray-200 */
+  --ops-border-strong: #d1d5db;   /* gray-300 */
+  --ops-hover: #eef2ff;           /* indigo-50-ish hover */
 
-  --ops-text-muted: rgba(255, 255, 255, 0.65);
-  --ops-text-faint: rgba(255, 255, 255, 0.45);
+  --ops-text-muted: #4b5563;      /* gray-600 */
+  --ops-text-faint: #6b7280;      /* gray-500 */
 
-  /* Surfaces */
-  --ops-surface: rgba(255, 255, 255, 0.04);
-  --ops-surface-2: rgba(255, 255, 255, 0.06);
+  /* Surfaces (OPAQUE — no translucency) */
+  --ops-surface: #ffffff;         /* cards / panels */
+  --ops-surface-2: #f3f4f6;       /* subtle secondary surface */
 
   /* Structural */
   --ops-brand-line: var(--ops-accent);
   --ops-rail-bg: var(--ops-bg);
-  --ops-footer-bg: rgba(255, 255, 255, 0.02);
+  --ops-footer-bg: #ffffff;
 
   /* Focus ring */
-  --ops-focus: rgba(242, 92, 42, 0.55);
+  --ops-focus: rgba(37, 99, 235, 0.35);
 
-  /* Severity tokens (for triage colors) */
+  /* Severity tokens (clear, accessible) */
   --ops-sev-critical: #b42318;
-  --ops-sev-critical-bg: rgba(180, 35, 24, 0.18);
+  --ops-sev-critical-bg: #fee4e2; /* light red */
 
   --ops-sev-high: #b54708;
-  --ops-sev-high-bg: rgba(181, 71, 8, 0.18);
+  --ops-sev-high-bg: #ffedd5;     /* light amber */
 
   --ops-sev-medium: #0f766e;
-  --ops-sev-medium-bg: rgba(15, 118, 110, 0.18);
+  --ops-sev-medium-bg: #ccfbf1;   /* light teal */
 
   --ops-sev-low: #64748b;
-  --ops-sev-low-bg: rgba(100, 116, 139, 0.12);
+  --ops-sev-low-bg: #e2e8f0;      /* light slate */
 
   /* =========================
-     CTA tokens (dark default)
+     CTA tokens (light default)
      ========================= */
-  --ops-cta-primary-bg: #000000;
+  --ops-cta-primary-bg: #111827;      /* near-black button */
   --ops-cta-primary-text: #ffffff;
-  --ops-cta-primary-border: var(--ops-accent);
+  --ops-cta-primary-border: #111827;
 }
 
 /* =========================
-   LIGHT MODE OVERRIDES
-   Toggle by applying class "theme-light" to <html>
+   DARK MODE OVERRIDES
+   Toggle by applying class "theme-dark" to <html>
    ========================= */
-html.theme-light {
-  --ops-bg: #ffffff;
-  --ops-text: #121212;
+html.theme-dark {
+  /* Core */
+  --ops-bg: #0b0f14;
+  --ops-text: #e5e7eb;
 
-  --ops-accent: #f25c2a;
-  --ops-accent-dark: #cc461d;
-  --ops-accent-soft: #ffd3c6;
+  /* Accent stays consistent */
+  --ops-accent: #60a5fa;          /* blue-400 for dark */
+  --ops-accent-dark: #3b82f6;     /* blue-500 */
+  --ops-accent-soft: rgba(96, 165, 250, 0.18);
 
-  --ops-border: rgba(18, 18, 18, 0.12);
-  --ops-border-strong: rgba(18, 18, 18, 0.18);
-  --ops-hover: rgba(18, 18, 18, 0.05);
+  /* Neutrals */
+  --ops-border: rgba(255, 255, 255, 0.10);
+  --ops-border-strong: rgba(255, 255, 255, 0.16);
+  --ops-hover: rgba(255, 255, 255, 0.06);
 
-  --ops-text-muted: rgba(18, 18, 18, 0.62);
-  --ops-text-faint: rgba(18, 18, 18, 0.42);
+  --ops-text-muted: rgba(229, 231, 235, 0.72);
+  --ops-text-faint: rgba(229, 231, 235, 0.52);
 
-  --ops-surface: rgba(18, 18, 18, 0.04);
-  --ops-surface-2: rgba(18, 18, 18, 0.06);
+  /* Surfaces (still mostly opaque for clarity) */
+  --ops-surface: #0f1620;
+  --ops-surface-2: #121b26;
 
+  /* Structural */
   --ops-brand-line: var(--ops-accent);
-  --ops-rail-bg: #ffffff;
-  --ops-footer-bg: rgba(18, 18, 18, 0.02);
+  --ops-rail-bg: var(--ops-bg);
+  --ops-footer-bg: #0f1620;
 
-  --ops-focus: rgba(242, 92, 42, 0.45);
+  /* Focus ring */
+  --ops-focus: rgba(96, 165, 250, 0.45);
 
-  /* Severity stays consistent, just a touch lighter bg */
-  --ops-sev-critical: #b42318;
-  --ops-sev-critical-bg: rgba(180, 35, 24, 0.12);
+  /* Severity tokens (same hues, darker backgrounds) */
+  --ops-sev-critical: #f97066;
+  --ops-sev-critical-bg: rgba(249, 112, 102, 0.14);
 
-  --ops-sev-high: #b54708;
-  --ops-sev-high-bg: rgba(181, 71, 8, 0.12);
+  --ops-sev-high: #fdb022;
+  --ops-sev-high-bg: rgba(253, 176, 34, 0.14);
 
-  --ops-sev-medium: #0f766e;
-  --ops-sev-medium-bg: rgba(15, 118, 110, 0.12);
+  --ops-sev-medium: #2dd4bf;
+  --ops-sev-medium-bg: rgba(45, 212, 191, 0.14);
 
-  /* =========================
-     CTA tokens (light overrides)
-     ========================= */
+  --ops-sev-low: #94a3b8;
+  --ops-sev-low-bg: rgba(148, 163, 184, 0.12);
+
+  /* CTA tokens (dark overrides) */
   --ops-cta-primary-bg: #ffffff;
-  --ops-cta-primary-text: #121212;
-  --ops-cta-primary-border: var(--ops-accent);
+  --ops-cta-primary-text: #0b0f14;
+  --ops-cta-primary-border: rgba(255, 255, 255, 0.14);
 }
 
 /* Base */
@@ -119,11 +127,11 @@ body {
 }
 
 /* Logo swap helpers */
-html:not(.theme-light) .theme-light-only {
+html:not(.theme-dark) .theme-dark-only {
   display: none;
 }
 
-html.theme-light .theme-dark-only {
+html.theme-dark .theme-light-only {
   display: none;
 }
 
@@ -155,7 +163,7 @@ html.theme-light .theme-dark-only {
 }
 
 .ops-cta-primary:hover {
-  background: var(--ops-surface);
+  background: var(--ops-surface-2);
 }
 
 .ops-cta-primary:focus-visible {

@@ -15,7 +15,12 @@ import {
 export const dynamic = "force-dynamic";
 
 // Alpha scope: ONLY show Notion + QuickBooks alerts on Attention page.
-const ALPHA_ALLOWED_ALERT_TYPES = new Set<string>(["notion_stale_activity", "qbo_overdue_invoice"]);
+const ALPHA_ALLOWED_ALERT_TYPES = new Set<string>([
+  "notion_stale_activity",
+  "notion_stale_past_due",
+  "qbo_overdue_invoice",
+  "qbo_invoices_due_to_send",
+]);
 
 function severityFromScore(score: number): Severity {
   if (score >= 90) return "critical";
@@ -102,24 +107,104 @@ function issueSummaryFor(alert: AlertRowType): string {
   switch (alert.type) {
     case "qbo_overdue_invoice":
       return "Overdue invoices";
+    case "qbo_invoices_due_to_send":
+      return "Invoices due to be sent";
     case "notion_stale_activity":
       return "Possible stalled project tasks";
+    case "notion_stale_past_due":
+      return "Missed task deadlines";
+
     // Future: HubSpot types
     case "hubspot_deals_stalled":
       return "Deals stalled after activity";
     case "hubspot_late_stage_idle":
       return "Late-stage deals idle";
-    // Future: QB/Notion add-ons (placeholders for module alignment)
-    case "qbo_invoices_due_to_send":
-      return "Invoices due to be sent";
-    case "notion_stale_past_due":
-      return "Tasks overdue and inactive";
+
     default:
       return "Needs attention";
   }
 }
 
+type TriggerBlock = {
+  summary: string;
+  bullets: string[];
+};
+
+function HoverDefinition({
+  label,
+  block,
+}: {
+  label: string;
+  block: TriggerBlock;
+}) {
+  return (
+    <span className="relative inline-block">
+      <span className="cursor-default">
+        {label}
+      </span>
+
+      {/* Hover card */}
+      <span
+        className="pointer-events-none absolute left-0 top-full z-50 hidden w-[320px] translate-y-2 rounded-xl border border-[var(--ops-border-strong)] bg-[var(--ops-bg)] p-3 text-xs text-[var(--ops-text)] shadow-xl group-hover:block"
+        aria-hidden="true"
+      >
+        <div className="text-[13px] font-semibold text-[var(--ops-text)]">{block.summary}</div>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-[12px] text-[var(--ops-text-muted)]">
+          {block.bullets.map((b, i) => (
+            <li key={i}>{b}</li>
+          ))}
+        </ul>
+      </span>
+    </span>
+  );
+}
+
 function SupportedToolsModule() {
+  const defs: Record<string, TriggerBlock> = {
+    qbo_overdue_invoice: {
+      summary: "Overdue invoices",
+      bullets: [
+        "Triggers if an Invoice has Balance > 0 and DueDate < today.",
+        "Shows one pattern-based alert per customer (aggregated).",
+      ],
+    },
+    qbo_invoices_due_to_send: {
+      summary: "Invoices due to be sent",
+      bullets: [
+        "Triggers if Invoice.TxnDate < today (invoice date has passed).",
+        "AND Invoice.TotalAmt > 0 (non-zero value).",
+        'AND Invoice.EmailStatus is \"NeedToSend\" or \"NotSet\" (not sent).',
+        "Shows one pattern-based alert per customer (aggregated).",
+      ],
+    },
+    notion_stale_activity: {
+      summary: "Possible stalled project tasks",
+      bullets: [
+        "Triggers if an item is active (not complete/archived in your DB).",
+        "AND now - last_edited_time ≥ NOTION_STALE_THRESHOLD_DAYS.",
+      ],
+    },
+    notion_stale_past_due: {
+      summary: "Missed task deadlines",
+      bullets: [
+        "Triggers if Due Date is set and Due Date ≤ (today - NOTION_PAST_DUE_GRACE_DAYS).",
+        'AND Status ≠ \"Done\" (not marked complete).',
+      ],
+    },
+    hubspot_deals_stalled: {
+      summary: "Deals stalled after activity",
+      bullets: [
+        "Planned (paused): triggers when a deal has recent activity but no stage movement after X days.",
+      ],
+    },
+    hubspot_late_stage_idle: {
+      summary: "Late-stage deals idle",
+      bullets: [
+        "Planned (paused): triggers when a late-stage deal has no activity for X days.",
+      ],
+    },
+  };
+
   return (
     <div className="mt-6 rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)] p-4">
       <div className="text-sm font-semibold text-[var(--ops-text)]">Supported tools & alerts</div>
@@ -133,8 +218,12 @@ function SupportedToolsModule() {
             QuickBooks
           </div>
           <ul className="mt-2 space-y-1 text-sm text-[var(--ops-text-muted)]">
-            <li>• Overdue invoices</li>
-            <li>• Invoices due to be sent</li>
+            <li className="group">
+              • <HoverDefinition label="Overdue invoices" block={defs.qbo_overdue_invoice} />
+            </li>
+            <li className="group">
+              • <HoverDefinition label="Invoices due to be sent" block={defs.qbo_invoices_due_to_send} />
+            </li>
           </ul>
         </div>
 
@@ -143,8 +232,12 @@ function SupportedToolsModule() {
             Notion
           </div>
           <ul className="mt-2 space-y-1 text-sm text-[var(--ops-text-muted)]">
-            <li>• Possible stalled project tasks</li>
-            <li>• Tasks overdue and inactive</li>
+            <li className="group">
+              • <HoverDefinition label="Possible stalled project tasks" block={defs.notion_stale_activity} />
+            </li>
+            <li className="group">
+              • <HoverDefinition label="Missed task deadlines" block={defs.notion_stale_past_due} />
+            </li>
           </ul>
         </div>
 
@@ -153,8 +246,12 @@ function SupportedToolsModule() {
             HubSpot
           </div>
           <ul className="mt-2 space-y-1 text-sm text-[var(--ops-text-muted)]">
-            <li>• Deals stalled after activity</li>
-            <li>• Late-stage deals idle</li>
+            <li className="group">
+              • <HoverDefinition label="Deals stalled after activity" block={defs.hubspot_deals_stalled} />
+            </li>
+            <li className="group">
+              • <HoverDefinition label="Late-stage deals idle" block={defs.hubspot_late_stage_idle} />
+            </li>
           </ul>
         </div>
       </div>
@@ -168,9 +265,7 @@ export default async function Page() {
   let customerId: string | null = null;
   try {
     customerId = await getCurrentCustomerId();
-  } catch {
-    // no-op
-  }
+  } catch {}
 
   if (!customerId) {
     return (
@@ -212,7 +307,6 @@ export default async function Page() {
     .select("*")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false });
-
   const alerts = (alertsRaw || []) as AlertRowType[];
 
   const openAlerts = alerts.filter((a) => {
@@ -246,7 +340,6 @@ export default async function Page() {
     return { alert: a, customer, presentation: final, severity: sev };
   });
 
-  // Urgency-only ordering (no sort UI)
   presented = presented.sort((x, y) => {
     const ds = (y.presentation.score ?? 0) - (x.presentation.score ?? 0);
     if (ds !== 0) return ds;
@@ -266,14 +359,12 @@ export default async function Page() {
         <div className="overflow-hidden rounded-2xl border border-[var(--ops-border)] bg-[var(--ops-surface)]">
           {presented.map(({ alert, customer, presentation, severity }, idx) => {
             const sevCls = severityRowClasses(severity);
-            const sevLabel = severity === "critical" ? "Critical" : severity === "high" ? "High" : "Medium";
+            const sevLabel =
+              severity === "critical" ? "Critical" : severity === "high" ? "High" : "Medium";
 
             const cta = getOpenCta(alert, customer);
-
             const integrationName = integrationLabel(alert);
             const issueSummary = issueSummaryFor(alert);
-
-            // 2nd line: issue specifics. Prefer summary; fallback to title.
             const issueSpecifics = (presentation.summary || presentation.title || "").trim();
 
             return (

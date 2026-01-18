@@ -1,16 +1,13 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import "./globals.css";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { UserMenu } from "@/components/UserMenu";
-import SideNav from "@/components/SideNav";
-import ThemeToggle from "@/components/ThemeToggle";
 
 export const metadata: Metadata = {
-  title: "Amargosa",
-  description: "Amargosa",
+  title: "Ops Copilot (Alpha)",
+  description: "Attention and operational drift",
 };
 
 function IconLink({
@@ -90,41 +87,17 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className="flex min-h-screen flex-col bg-[var(--ops-bg)] text-[var(--ops-text)]">
-        <header className="sticky top-0 z-50 border-b border-[var(--ops-border)] bg-[var(--ops-footer-bg)] backdrop-blur">
+        <header className="sticky top-0 z-50 border-b border-[var(--ops-border)] bg-[var(--ops-footer-bg)]">
           <div className="h-[3px] w-full bg-[var(--ops-brand-line)]" />
 
           <div className="flex h-16 w-full items-center justify-between px-4 sm:px-6">
             <Link
               href="/"
-              className="flex items-center gap-2 rounded-lg focus:outline-none focus:ring-0"
-              title="Home"
-            >
-              {/* Dark mode logo */}
-              <Image
-                src="/brand/amargosa-mark_orange-on-dark_512.svg"
-                alt="Amargosa"
-                width={28}
-                height={28}
-                className="theme-dark-only"
-                priority
-              />
-
-              {/* Light mode logo (UPDATED) */}
-              <Image
-                src="/brand/amargosa-mark_orange_transparent_512.svg"
-                alt="Amargosa"
-                width={28}
-                height={28}
-                className="theme-light-only"
-                priority
-              />
-
-              <span className="text-sm font-semibold tracking-wide text-[var(--ops-text)]"></span>
-            </Link>
+              className="h-9 w-9 rounded-lg focus:outline-none focus:ring-0"
+              aria-label="Home"
+            />
 
             <div className="flex items-center gap-2">
-              <ThemeToggle />
-
               {user ? (
                 <>
                   <IconLink href="/settings" label="Settings">
@@ -147,27 +120,12 @@ export default async function RootLayout({
           </div>
         </header>
 
-        <div className="grid w-full flex-1 grid-cols-1 sm:grid-cols-[240px_1fr]">
-          <aside
-            className="hidden border-r border-[var(--ops-border)] sm:block"
-            style={{ background: "var(--ops-rail-bg)" }}
-          >
-            <div className="sticky top-16 px-3 py-4">
-              <SideNav />
-            </div>
-          </aside>
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6">
+          {children}
+        </main>
 
-          <main className="min-w-0 px-4 py-6 sm:px-6">{children}</main>
-        </div>
-
-        <footer
-          className="mt-auto border-t border-[var(--ops-border)]"
-          style={{ background: "var(--ops-footer-bg)" }}
-        >
-          <div className="flex w-full items-center justify-between px-4 py-4 text-sm sm:px-6">
-            <div className="text-[var(--ops-text-muted)]">Amargosa © 2026</div>
-            <div />
-          </div>
+        <footer className="mt-auto border-t border-[var(--ops-border)] bg-[var(--ops-footer-bg)]">
+          <div className="h-12" />
         </footer>
       </body>
     </html>
